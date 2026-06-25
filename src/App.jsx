@@ -226,7 +226,7 @@ export default function App() {
     total: equipment.length,
     active: equipment.filter(item => item.status === 'ใช้งานปกติ' || item.status === 'สำรอง').length,
     repair: equipment.filter(item => item.status === 'ส่งซ่อม').length,
-    disposed: equipment.filter(item => item.status === 'แทงจำหน่าย').length,
+    disposed: equipment.filter(item => item.status === 'เสียรอจำหน่าย').length,
   };
 
   // หมวดหมู่และจำนวนอุปกรณ์แต่ละชนิด
@@ -236,7 +236,8 @@ export default function App() {
     printer: equipment.filter(item => item.category === 'เครื่องพิมพ์').length,
     server: equipment.filter(item => item.category === 'เซิร์ฟเวอร์').length,
     network: equipment.filter(item => item.category === 'อุปกรณ์เครือข่าย').length,
-    other: equipment.filter(item => !['คอมพิวเตอร์', 'จอมอนิเตอร์', 'เครื่องพิมพ์', 'เซิร์ฟเวอร์', 'อุปกรณ์เครือข่าย'].includes(item.category)).length,
+    supply: equipment.filter(item => item.category === 'วัสดุอุปกรณ์').length,
+    other: equipment.filter(item => !['คอมพิวเตอร์', 'จอมอนิเตอร์', 'เครื่องพิมพ์', 'เซิร์ฟเวอร์', 'อุปกรณ์เครือข่าย', 'วัสดุอุปกรณ์'].includes(item.category)).length,
   };
 
   // การกรองข้อมูลสำหรับการค้นหา
