@@ -4,7 +4,8 @@ import {
   Plus, Edit3, Trash2, Search, Activity,
   AlertCircle, CheckCircle2, XCircle, HardDrive,
   LayoutDashboard, Wrench, Trash, LogOut, User, Lock, Menu, X, 
-  Settings, Clock, ArrowUpRight, ShieldAlert, ClipboardList
+  Settings, Clock, ArrowUpRight, ShieldAlert, ClipboardList,
+  Package // นำเข้าไอคอนกล่องพัสดุสำหรับวัสดุและอุปกรณ์สำนักงาน
 } from 'lucide-react';
 
 // URL ของ Google Apps Script Web App
@@ -226,18 +227,18 @@ export default function App() {
     total: equipment.length,
     active: equipment.filter(item => item.status === 'ใช้งานปกติ' || item.status === 'สำรอง').length,
     repair: equipment.filter(item => item.status === 'ส่งซ่อม').length,
-    disposed: equipment.filter(item => item.status === 'เสียรอจำหน่าย').length,
+    disposed: equipment.filter(item => item.status === 'แทงจำหน่าย').length,
   };
 
-  // หมวดหมู่และจำนวนอุปกรณ์แต่ละชนิด
+  // หมวดหมู่และจำนวนอุปกรณ์แต่ละชนิด (เพิ่มหมวดหมู่ 'วัสดุ/อะไหล่/สำนักงาน')
   const categorySummary = {
     computer: equipment.filter(item => item.category === 'คอมพิวเตอร์').length,
     monitor: equipment.filter(item => item.category === 'จอมอนิเตอร์').length,
     printer: equipment.filter(item => item.category === 'เครื่องพิมพ์').length,
     server: equipment.filter(item => item.category === 'เซิร์ฟเวอร์').length,
     network: equipment.filter(item => item.category === 'อุปกรณ์เครือข่าย').length,
-    supply: equipment.filter(item => item.category === 'วัสดุอุปกรณ์').length,
-    other: equipment.filter(item => !['คอมพิวเตอร์', 'จอมอนิเตอร์', 'เครื่องพิมพ์', 'เซิร์ฟเวอร์', 'อุปกรณ์เครือข่าย', 'วัสดุอุปกรณ์'].includes(item.category)).length,
+    material: equipment.filter(item => item.category === 'วัสดุ/อะไหล่/สำนักงาน').length,
+    other: equipment.filter(item => !['คอมพิวเตอร์', 'จอมอนิเตอร์', 'เครื่องพิมพ์', 'เซิร์ฟเวอร์', 'อุปกรณ์เครือข่าย', 'วัสดุ/อะไหล่/สำนักงาน'].includes(item.category)).length,
   };
 
   // การกรองข้อมูลสำหรับการค้นหา
@@ -253,6 +254,7 @@ export default function App() {
       case 'จอมอนิเตอร์': return <Monitor className="w-5 h-5 text-sky-400" />;
       case 'เครื่องพิมพ์': return <Printer className="w-5 h-5 text-fuchsia-400" />;
       case 'เซิร์ฟเวอร์': return <Server className="w-5 h-5 text-violet-400" />;
+      case 'วัสดุ/อะไหล่/สำนักงาน': return <Package className="w-5 h-5 text-amber-400" />;
       default: return <HardDrive className="w-5 h-5 text-emerald-400" />;
     }
   };
@@ -301,7 +303,7 @@ export default function App() {
             <div className="p-3.5 bg-indigo-500/10 rounded-2xl border border-indigo-500/20 shadow-[0_0_20px_rgba(99,102,241,0.15)] mb-3">
               <Cpu className="w-8 h-8 text-indigo-400" />
             </div>
-            <h1 className="text-2xl font-bold text-white tracking-wide">IT Baramee<span className="text-indigo-400">Computer</span></h1>
+            <h1 className="text-2xl font-bold text-white tracking-wide">Repair Systems<span className="text-indigo-400">Baramee</span></h1>
             <p className="text-xs text-slate-400 mt-1">ระบบบริหารจัดการครุภัณฑ์และทะเบียนอุปกรณ์ไอที</p>
           </div>
 
@@ -313,7 +315,7 @@ export default function App() {
                 <input 
                   type="text" 
                   required
-                  placeholder="admin"
+                  placeholder="ชื่อผู้ใช้งาน"
                   value={loginForm.username}
                   onChange={(e) => setLoginForm({...loginForm, username: e.target.value})}
                   className="w-full pl-10 pr-4 py-3 bg-slate-950 border border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 text-sm text-white placeholder-slate-600"
@@ -411,7 +413,7 @@ export default function App() {
               <Cpu className="w-5 h-5 text-indigo-400" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-white tracking-wide">IT Asset<span className="text-indigo-400">Hub</span></h1>
+              <h1 className="text-lg font-bold text-white tracking-wide">Repair Systems<span className="text-indigo-400">Baramee</span></h1>
               <p className="text-[10px] text-slate-500">ระบบจัดการงานครุภัณฑ์ไอที</p>
             </div>
           </div>
@@ -428,7 +430,7 @@ export default function App() {
             >
               <div className="flex items-center gap-2.5">
                 <LayoutDashboard className="w-4 h-4" />
-                <span>แดชบอร์ดสรุปผล</span>
+                <span>สรุปผล</span>
               </div>
             </button>
 
@@ -476,7 +478,7 @@ export default function App() {
             >
               <div className="flex items-center gap-2.5">
                 <Trash className="w-4 h-4" />
-                <span>แทงจำหน่าย</span>
+                <span>เสียรอจำหน่าย</span>
               </div>
               {stats.disposed > 0 && (
                 <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-rose-500/20 text-rose-400 font-bold border border-rose-500/10">
@@ -495,7 +497,7 @@ export default function App() {
             </div>
             <div>
               <p className="text-xs font-bold text-white">Administrator</p>
-              <p className="text-[10px] text-slate-500">IT Department</p>
+              <p className="text-[10px] text-slate-500">IT Tak</p>
             </div>
           </div>
           <button 
@@ -532,7 +534,7 @@ export default function App() {
                   }`}
                 >
                   <LayoutDashboard className="w-4 h-4" />
-                  <span>แดชบอร์ดสรุปผล</span>
+                  <span>สรุปผล</span>
                 </button>
 
                 <button 
@@ -569,7 +571,7 @@ export default function App() {
                 >
                   <div className="flex items-center gap-2.5">
                     <Trash className="w-4 h-4" />
-                    <span>แทงจำหน่าย</span>
+                    <span>เสียรอจำหน่าย</span>
                   </div>
                   {stats.disposed > 0 && <span className="text-xs bg-rose-500/20 text-rose-400 px-1.5 py-0.5 rounded font-bold">{stats.disposed}</span>}
                 </button>
@@ -581,7 +583,7 @@ export default function App() {
                 <div className="w-8 h-8 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center font-bold">AD</div>
                 <div>
                   <p className="text-xs font-bold text-white">Administrator</p>
-                  <p className="text-[10px] text-slate-500">IT Department</p>
+                  <p className="text-[10px] text-slate-500">IT Tak</p>
                 </div>
               </div>
               <button onClick={handleLogout} className="w-full flex items-center gap-2 px-3 py-2 text-slate-500 hover:text-rose-400 rounded-xl text-xs">
@@ -676,7 +678,7 @@ export default function App() {
                   </div>
                   <p className="text-xs font-bold text-amber-400 uppercase tracking-wider">กำลังส่งซ่อม</p>
                   <h3 className="text-3xl font-extrabold text-amber-400 mt-2">{stats.repair}</h3>
-                  <span className="text-[10px] text-slate-500 block mt-1.5">รอซ่อม / ส่งโรงงาน</span>
+                  <span className="text-[10px] text-slate-500 block mt-1.5">รอซ่อม / ส่งเคลม/เบิกอะไหล่</span>
                 </div>
 
                 <div className="bg-slate-900/60 p-5 rounded-2xl border border-white/5 relative overflow-hidden group hover:border-white/10 transition-all">
@@ -698,7 +700,7 @@ export default function App() {
                     <h4 className="text-sm font-bold text-white flex items-center gap-2">
                       <LayoutDashboard className="w-4 h-4 text-indigo-400" /> สัดส่วนแยกตามหมวดหมู่
                     </h4>
-                    <span className="text-xs text-slate-500">ทั้งหมด 6 ชนิด</span>
+                    <span className="text-xs text-slate-500">ทั้งหมด 7 ชนิด</span>
                   </div>
 
                   <div className="space-y-4 pt-2">
@@ -768,6 +770,20 @@ export default function App() {
                         <div 
                           className="bg-emerald-500 h-full rounded-full transition-all duration-500" 
                           style={{ width: `${stats.total > 0 ? (categorySummary.network / stats.total) * 100 : 0}%` }}
+                        ></div>
+                      </div>
+                    </div>
+
+                    {/* Materials & Spare parts & Office Supplies */}
+                    <div>
+                      <div className="flex justify-between text-xs font-semibold text-slate-400 mb-1">
+                        <span className="flex items-center gap-1.5"><Package className="w-3.5 h-3.5 text-amber-400" /> วัสดุ / อะไหล่ / อุปกรณ์สำนักงาน</span>
+                        <span className="text-white">{categorySummary.material} รายการ</span>
+                      </div>
+                      <div className="w-full bg-slate-950 h-2.5 rounded-full overflow-hidden">
+                        <div 
+                          className="bg-amber-500 h-full rounded-full transition-all duration-500" 
+                          style={{ width: `${stats.total > 0 ? (categorySummary.material / stats.total) * 100 : 0}%` }}
                         ></div>
                       </div>
                     </div>
@@ -987,7 +1003,7 @@ export default function App() {
                                   onClick={() => quickUpdateStatus(item, 'แทงจำหน่าย')}
                                   className="px-3 py-1.5 text-xs font-bold text-rose-400 hover:text-white bg-rose-500/10 hover:bg-rose-600 rounded-xl border border-rose-500/20 hover:border-transparent transition-all flex items-center gap-1.5"
                                 >
-                                  <Trash className="w-3.5 h-3.5" /> ปรับแทงจำหน่าย (ชำรุดมาก)
+                                  <Trash className="w-3.5 h-3.5" /> ปรับรอจำหน่าย (ชำรุดมาก)
                                 </button>
                               </div>
                             </td>
@@ -1012,12 +1028,12 @@ export default function App() {
                     <ShieldAlert className="w-5 h-5" />
                   </div>
                   <div>
-                    <h4 className="text-sm font-bold text-white">ถังพักแทงจำหน่าย / เศษซากอิเล็กทรอนิกส์</h4>
+                    <h4 className="text-sm font-bold text-white">ถังพักเสียรอจำหน่าย / เศษซากอิเล็กทรอนิกส์</h4>
                     <p className="text-xs text-slate-400 mt-1">รวบรวมครุภัณฑ์ไอทีที่ชำรุดเสียหายเกินเยียวยา เสื่อมสภาพการใช้งาน หรือสิ้นอายุขัย เพื่อจัดเก็บรายงานสำหรับการส่งทำลายหรือคัดแยกซากต่อไป</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 rounded-xl border border-white/5">
-                  <span className="text-xs text-slate-400 font-semibold">แทงจำหน่ายค้างอยู่:</span>
+                  <span className="text-xs text-slate-400 font-semibold">เสียรอจำหน่ายค้างอยู่:</span>
                   <span className="text-xs font-extrabold text-rose-400">{stats.disposed} รายการ</span>
                 </div>
               </div>
@@ -1029,7 +1045,7 @@ export default function App() {
                     <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mb-4 border border-slate-700/50 text-slate-400">
                       <Trash className="w-8 h-8" />
                     </div>
-                    <h3 className="text-lg font-semibold text-white mb-1">ไม่มีรายการครุภัณฑ์แทงจำหน่าย</h3>
+                    <h3 className="text-lg font-semibold text-white mb-1">ไม่มีรายการครุภัณฑ์จำหน่าย</h3>
                     <p className="text-sm text-slate-400">ในขณะนี้ยังไม่พบอุปกรณ์ไอทีที่จำหน่ายออกจากประวัติการใช้งานแบบถาวร</p>
                   </div>
                 ) : (
@@ -1134,6 +1150,7 @@ export default function App() {
                     <option value="เครื่องพิมพ์">เครื่องพิมพ์</option>
                     <option value="เซิร์ฟเวอร์">เซิร์ฟเวอร์</option>
                     <option value="อุปกรณ์เครือข่าย">อุปกรณ์เครือข่าย</option>
+                    <option value="วัสดุ/อะไหล่/สำนักงาน">วัสดุ / อะไหล่ / อุปกรณ์สำนักงาน</option>
                     <option value="อื่นๆ">อื่นๆ</option>
                   </select>
                 </div>
@@ -1169,7 +1186,7 @@ export default function App() {
                   >
                     <option value="ใช้งานปกติ">ใช้งานปกติ</option>
                     <option value="ส่งซ่อม">ส่งซ่อม</option>
-                    <option value="แทงจำหน่าย">แทงจำหน่าย</option>
+                    <option value="แทงจำหน่าย">เสียรอจำหน่าย</option>
                     <option value="สำรอง">สำรองไว้ใช้งาน</option>
                   </select>
                 </div>
