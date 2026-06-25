@@ -413,7 +413,7 @@ export default function App() {
               <Cpu className="w-5 h-5 text-indigo-400" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-white tracking-wide">Repair Systems<span className="text-indigo-400">Baramee</span></h1>
+              <h1 className="text-lg font-bold text-white tracking-wide">Phrabaramee<span className="text-indigo-400">Repair Systems</span></h1>
               <p className="text-[10px] text-slate-500">ระบบจัดการงานครุภัณฑ์ไอที</p>
             </div>
           </div>
