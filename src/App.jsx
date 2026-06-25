@@ -303,7 +303,7 @@ export default function App() {
             <div className="p-3.5 bg-indigo-500/10 rounded-2xl border border-indigo-500/20 shadow-[0_0_20px_rgba(99,102,241,0.15)] mb-3">
               <Cpu className="w-8 h-8 text-indigo-400" />
             </div>
-            <h1 className="text-2xl font-bold text-white tracking-wide">Repair Systems<span className="text-indigo-400">Baramee</span></h1>
+            <h1 className="text-2xl font-bold text-white tracking-wide">IT Baramee<span className="text-indigo-400">Repair Systems</span></h1>
             <p className="text-xs text-slate-400 mt-1">ระบบบริหารจัดการครุภัณฑ์และทะเบียนอุปกรณ์ไอที</p>
           </div>
 
