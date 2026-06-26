@@ -5,13 +5,13 @@ import {
   AlertCircle, CheckCircle2, XCircle, HardDrive,
   LayoutDashboard, Wrench, Trash, LogOut, User, Lock, Menu, X, 
   Clock, ArrowUpRight, ShieldAlert, ClipboardList,
-  Package, Calendar, Sliders, Database, BarChart3
+  Package, Calendar, Sliders, Database, BarChart3, ArrowLeftRight
 } from 'lucide-react';
 
 // URL ของ Google Apps Script Web App
 const GAS_URL = "https://script.google.com/macros/s/AKfycbxhsIVIDTXAV0agoOLI3KDOuXPUx2Gy6EBmMRpn2cPIq38gPkxJmFZ_Ag5EXCqslViOyQ/exec";  
 
-// บัญชีล็อกอิน (รหัสผ่านตามไฟล์ App_2.jsx คือ 11288)
+// บัญชีล็อกอิน
 const DEFAULT_AUTH = {
   username: "admin",
   password: "11288" 
@@ -32,6 +32,13 @@ export default function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   
+  // Manage Inventory Qty States (เบิกจ่าย / ปรับยอดวัสดุอุปกรณ์)
+  const [isManageQtyModalOpen, setIsManageQtyModalOpen] = useState(false);
+  const [selectedQtyItem, setSelectedQtyItem] = useState(null);
+  const [qtyAction, setQtyAction] = useState('use'); // use (เบิกใช้งาน), dispose (จำหน่ายออก), adjust (ปรับสต๊อก)
+  const [qtyValue, setQtyValue] = useState(1);
+  const [qtyRecipient, setQtyRecipient] = useState('');
+
   // Alert & Confirmation States
   const [alertMessage, setAlertMessage] = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
@@ -45,7 +52,8 @@ export default function App() {
     owner: '',
     purchaseDate: '', // วันที่ / ปี ที่ซื้อ
     specs: '',        // สเปคเครื่อง เช่น Windows 11, RAM 16GB
-    disposalDate: ''  // วันที่บันทึกจำหน่าย (สำหรับสถานะรอจำหน่าย / แทงจำหน่าย)
+    disposalDate: '',  // วันที่บันทึกจำหน่าย (สำหรับสถานะรอจำหน่าย / แทงจำหน่าย)
+    quantity: 1       // จำนวนวัสดุอุปกรณ์
   });
 
   // โหลดข้อมูลอัตโนมัติเมื่อเข้าสู่ระบบเรียบร้อยแล้ว
@@ -109,9 +117,11 @@ export default function App() {
     setLoading(true);
     
     const isEditing = !!editingItem;
+    const parsedQty = parseInt(formData.quantity) || 1;
     const payload = {
       id: isEditing ? editingItem.id : crypto.randomUUID(),
-      ...formData
+      ...formData,
+      quantity: parsedQty
     };
 
     // อัปเดตแบบ Local ทันทีเพื่อให้ผู้ใช้งานไม่ต้องรอโหลด (Optimistic UI)
@@ -140,6 +150,107 @@ export default function App() {
     
     setLoading(false);
     closeModal();
+  };
+
+  // ดำเนินการหักลด/โยกย้ายสเตตัสจำนวนวัสดุคงคลัง
+  const handleQtySubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedQtyItem) return;
+    setLoading(true);
+
+    const moveQty = parseInt(qtyValue) || 0;
+    const currentQty = parseInt(selectedQtyItem.quantity) || 1;
+
+    if (qtyAction === 'use' || qtyAction === 'dispose') {
+      if (moveQty > currentQty) {
+        showAlert('จำนวนที่เลือกมากกว่าจำนวนที่มีอยู่ในระบบคงคลัง!', 'error');
+        setLoading(false);
+        return;
+      }
+
+      // 1. ลดจำนวนอุปกรณ์หรือวัสดุในสต็อกเดิม
+      const updatedOriginalItem = {
+        ...selectedQtyItem,
+        quantity: currentQty - moveQty
+      };
+
+      // 2. สร้างรายการใหม่สำหรับการเบิกใช้งาน หรือ ชำรุดเสียหาย
+      const newCreatedItem = {
+        id: crypto.randomUUID(),
+        name: selectedQtyItem.name,
+        category: selectedQtyItem.category,
+        serial: qtyAction === 'use' ? selectedQtyItem.serial : '', 
+        status: qtyAction === 'use' ? 'ใช้งานปกติ' : 'แทงจำหน่าย',
+        owner: qtyAction === 'use' ? qtyRecipient : selectedQtyItem.owner,
+        purchaseDate: selectedQtyItem.purchaseDate || new Date().toISOString().split('T')[0],
+        specs: selectedQtyItem.specs,
+        disposalDate: qtyAction === 'dispose' ? new Date().toISOString().split('T')[0] : '',
+        quantity: moveQty
+      };
+
+      // อัปเดตฝั่งแสดงผล (Local State)
+      let tempEquipment = [...equipment];
+      tempEquipment = tempEquipment.map(item => item.id === selectedQtyItem.id ? updatedOriginalItem : item);
+      tempEquipment = [newCreatedItem, ...tempEquipment];
+
+      // ถ้ายอดคงคลังเดิมเหลือเป็น 0 ชิ้น ให้เคลียร์รายการเดิมทิ้งเพื่อไม่ให้ค้างขยะคลัง
+      if (updatedOriginalItem.quantity <= 0) {
+        tempEquipment = tempEquipment.filter(item => item.id !== selectedQtyItem.id);
+      }
+
+      setEquipment(tempEquipment);
+      showAlert(`ดำเนินการ${qtyAction === 'use' ? 'เบิกใช้งานปกติ' : 'ตัดชำรุดจำหน่ายออก'} จำนวน ${moveQty} ชิ้นเรียบร้อย!`);
+
+      // ส่งคำขอบันทึกไปยังเซิร์ฟเวอร์ Google Sheet
+      if (GAS_URL) {
+        try {
+          if (updatedOriginalItem.quantity <= 0) {
+            await fetch(GAS_URL, {
+              method: 'POST',
+              body: JSON.stringify({ action: 'delete', data: { id: selectedQtyItem.id } })
+            });
+          } else {
+            await fetch(GAS_URL, {
+              method: 'POST',
+              body: JSON.stringify({ action: 'update', data: updatedOriginalItem })
+            });
+          }
+
+          await fetch(GAS_URL, {
+            method: 'POST',
+            body: JSON.stringify({ action: 'add', data: newCreatedItem })
+          });
+        } catch (error) {
+          console.error("Error syncing stock quantity:", error);
+          showAlert('เกิดข้อผิดพลาดในการเชื่อมต่อคลาวด์เพื่อหักยอด', 'error');
+        }
+      }
+
+    } else if (qtyAction === 'adjust') {
+      // ดำเนินการปรับยอดสะสมโดยตรง
+      const updatedItem = {
+        ...selectedQtyItem,
+        quantity: moveQty
+      };
+
+      setEquipment(prev => prev.map(item => item.id === selectedQtyItem.id ? updatedItem : item));
+      showAlert('ปรับข้อมูลยอดสต๊อกคงคลังสำเร็จ');
+
+      if (GAS_URL) {
+        try {
+          await fetch(GAS_URL, {
+            method: 'POST',
+            body: JSON.stringify({ action: 'update', data: updatedItem })
+          });
+        } catch (error) {
+          console.error("Error adjusting stock value:", error);
+          showAlert('ไม่สามารถซิงก์ยอดสต๊อกล่าสุดได้', 'error');
+        }
+      }
+    }
+
+    setLoading(false);
+    setIsManageQtyModalOpen(false);
   };
 
   // ร้องขอเพื่อทำการลบข้อมูล
@@ -179,7 +290,6 @@ export default function App() {
   const quickUpdateStatus = async (item, newStatus) => {
     setLoading(true);
     
-    // ตั้งค่าวันจำหน่ายอัตโนมัติหากเปลี่ยนเป็น รอจำหน่าย หรือ แทงจำหน่าย
     let currentDisposalDate = item.disposalDate || '';
     if (newStatus === 'รอจำหน่าย' || newStatus === 'แทงจำหน่าย') {
       const today = new Date();
@@ -230,7 +340,8 @@ export default function App() {
         owner: item.owner || '',
         purchaseDate: item.purchaseDate || '',
         specs: item.specs || '',
-        disposalDate: item.disposalDate || ''
+        disposalDate: item.disposalDate || '',
+        quantity: item.quantity || 1
       });
     } else {
       setEditingItem(null);
@@ -242,45 +353,77 @@ export default function App() {
         owner: '',
         purchaseDate: '',
         specs: '',
-        disposalDate: ''
+        disposalDate: '',
+        quantity: 1
       });
     }
     setIsModalOpen(true);
   };
 
-  const closeModal = () => setIsModalOpen(false);
-
-  // คำนวณ Metric สถิติต่างๆ สำหรับหน้า Dashboard
-  const stats = {
-    total: equipment.length,
-    active: equipment.filter(item => item.status === 'ใช้งานปกติ').length,
-    backup: equipment.filter(item => item.status === 'สำรอง').length,
-    repair: equipment.filter(item => item.status === 'ส่งซ่อม').length,
-    pendingDisposal: equipment.filter(item => item.status === 'รอจำหน่าย').length,
-    disposed: equipment.filter(item => item.status === 'แทงจำหน่าย').length,
+  const openQtyModal = (item) => {
+    setSelectedQtyItem(item);
+    setQtyValue(1);
+    setQtyRecipient('');
+    setQtyAction('use');
+    setIsManageQtyModalOpen(true);
   };
 
-  // คำนวณตามต้องการ:
-  // 1. คงคลัง (อุปกรณ์สถานะ 'สำรอง' และหมวดหมู่ 'วัสดุ/อะไหล่/สำนักงาน')
-  const totalStockCount = equipment.filter(item => item.status === 'สำรอง' || item.category === 'วัสดุ/อะไหล่/สำนักงาน').length;
-  // 2. การนำไปใช้งานจริง (อุปกรณ์สถานะ 'ใช้งานปกติ')
-  const totalUsageCount = equipment.filter(item => item.status === 'ใช้งานปกติ').length;
-  // 3. เสียจำหน่าย (รวม 'รอจำหน่าย' และ 'แทงจำหน่าย')
-  const totalDisposedCount = equipment.filter(item => item.status === 'รอจำหน่าย' || item.status === 'แทงจำหน่าย').length;
+  const closeModal = () => setIsModalOpen(false);
 
-  // เปอร์เซ็นต์ความคืบหน้าเชิงสถิติ (หลีกเลี่ยงการหารด้วยศูนย์)
-  const usagePercentage = stats.total > 0 ? Math.round((totalUsageCount / stats.total) * 100) : 0;
-  const stockPercentage = stats.total > 0 ? Math.round((totalStockCount / stats.total) * 100) : 0;
-  const disposalPercentage = stats.total > 0 ? Math.round((totalDisposedCount / stats.total) * 100) : 0;
+  // --- ระบบแยกแยะคำนวณสถิติสะสม (แยกครุภัณฑ์ กับ วัสดุอุปกรณ์ เด็ดขาด) ---
 
-  // หมวดหมู่และสถิติการใช้งานแยกตามประเภทอุปกรณ์
+  // 1. ครุภัณฑ์ทั้งหมด (Total Assets): ไม่นับรวม 'วัสดุ/อะไหล่/สำนักงาน'
+  const totalAssetsCount = equipment
+    .filter(item => item.category !== 'วัสดุ/อะไหล่/สำนักงาน')
+    .reduce((sum, item) => sum + (parseInt(item.quantity) || 1), 0);
+
+  // 2. วัสดุอุปกรณ์ทั้งหมด (Total Materials): นับเฉพาะ 'วัสดุ/อะไหล่/สำนักงาน'
+  const totalMaterialsCount = equipment
+    .filter(item => item.category === 'วัสดุ/อะไหล่/สำนักงาน')
+    .reduce((sum, item) => sum + (parseInt(item.quantity) || 1), 0);
+
+  // สถิติและ Metric ดั้งเดิมของครุภัณฑ์ (ซ่อมบำรุง / จำหน่าย / สถานะ)
+  const stats = {
+    // แยกยอดรวมชัดเจน
+    total: equipment.reduce((sum, item) => sum + (parseInt(item.quantity) || 1), 0),
+    totalAssets: totalAssetsCount,
+    totalMaterials: totalMaterialsCount,
+
+    // สถานะรายยูนิตรวม
+    active: equipment.filter(item => item.status === 'ใช้งานปกติ').reduce((sum, item) => sum + (parseInt(item.quantity) || 1), 0),
+    backup: equipment.filter(item => item.status === 'สำรอง').reduce((sum, item) => sum + (parseInt(item.quantity) || 1), 0),
+    repair: equipment.filter(item => item.status === 'ส่งซ่อม').reduce((sum, item) => sum + (parseInt(item.quantity) || 1), 0),
+    pendingDisposal: equipment.filter(item => item.status === 'รอจำหน่าย').reduce((sum, item) => sum + (parseInt(item.quantity) || 1), 0),
+    disposed: equipment.filter(item => item.status === 'แทงจำหน่าย').reduce((sum, item) => sum + (parseInt(item.quantity) || 1), 0),
+  };
+
+  // *** แก้ไขจุดสำคัญ ***
+  // ยอดวัสดุที่พร้อมใช้งานจริงในคลังในขณะนี้ (ต้องกรองสถานะเป็น "สำรอง" เท่านั้น เพื่อไม่นับรวมวัสดุที่เบิกจ่ายนำไปใช้งานแล้ว)
+  const activeMaterialsCount = equipment
+    .filter(item => item.category === 'วัสดุ/อะไหล่/สำนักงาน' && item.status === 'สำรอง')
+    .reduce((sum, item) => sum + (parseInt(item.quantity) || 1), 0);
+
+  // ครุภัณฑ์ที่ถูกเบิกไปใช้งานจริงในส่วนงาน (ไม่รวมสถานะจำหน่าย / ส่งซ่อม)
+  const activeAssetsInUseCount = equipment
+    .filter(item => item.category !== 'วัสดุ/อะไหล่/สำนักงาน' && item.status === 'ใช้งานปกติ')
+    .reduce((sum, item) => sum + (parseInt(item.quantity) || 1), 0);
+
+  // ยอดชำรุดรอจำหน่าย + แทงจำหน่ายสะสม (รวมทั้งครุภัณฑ์และวัสดุ)
+  const totalDisposedCount = stats.pendingDisposal + stats.disposed;
+
+  // การคำนวณอัตราส่วน % แบบแยกสัญชาติเด็ดขาด
+  const assetsUsagePercentage = totalAssetsCount > 0 ? Math.min(Math.round((activeAssetsInUseCount / totalAssetsCount) * 100), 100) : 0;
+  const materialsPercentage = totalMaterialsCount > 0 ? Math.min(Math.round((activeMaterialsCount / totalMaterialsCount) * 100), 100) : 0;
+  const overallDisposalPercentage = stats.total > 0 ? Math.min(Math.round((totalDisposedCount / stats.total) * 100), 100) : 0;
+
+  // ผลรวมสะสมยอดแต่ละประเภทในระบบเพื่อใช้แสดงผลบนหน้าแดชบอร์ดด่วน
   const categorySummary = {
-    computer: equipment.filter(item => item.category === 'คอมพิวเตอร์').length,
-    monitor: equipment.filter(item => item.category === 'จอมอนิเตอร์').length,
-    printer: equipment.filter(item => item.category === 'เครื่องพิมพ์').length,
-    server: equipment.filter(item => item.category === 'เซิร์ฟเวอร์').length,
-    network: equipment.filter(item => item.category === 'อุปกรณ์เครือข่าย').length,
-    material: equipment.filter(item => item.category === 'วัสดุ/อะไหล่/สำนักงาน').length,
+    computer: equipment.filter(item => item.category === 'คอมพิวเตอร์').reduce((sum, item) => sum + (parseInt(item.quantity) || 1), 0),
+    monitor: equipment.filter(item => item.category === 'จอมอนิเตอร์').reduce((sum, item) => sum + (parseInt(item.quantity) || 1), 0),
+    printer: equipment.filter(item => item.category === 'เครื่องพิมพ์').reduce((sum, item) => sum + (parseInt(item.quantity) || 1), 0),
+    server: equipment.filter(item => item.category === 'เซิร์ฟเวอร์').reduce((sum, item) => sum + (parseInt(item.quantity) || 1), 0),
+    network: equipment.filter(item => item.category === 'อุปกรณ์เครือข่าย').reduce((sum, item) => sum + (parseInt(item.quantity) || 1), 0),
+    material: totalMaterialsCount,
   };
 
   // การกรองคำค้นหาในตาราง
@@ -341,11 +484,9 @@ export default function App() {
 
   // --- RENDERING VIEWS ---
 
-  // 1. หน้าจอล็อกอิน (Login Screen) - โทนสว่าง มิ้นต์สะอาดตา
   if (!isLoggedIn) {
     return (
       <div className="min-h-screen bg-white flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans">
-        {/* แสงเรืองรองโทนสีมิ้นต์พาสเทล */}
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-teal-50/60 rounded-full blur-3xl"></div>
         <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-emerald-50/50 rounded-full blur-3xl"></div>
 
@@ -405,7 +546,7 @@ export default function App() {
           </form>
 
           <div className="mt-8 text-center border-t border-slate-100 pt-4">
-            <span className="text-[10px] text-teal-500 font-bold uppercase tracking-widest">Phrabaramee Repair Version 3 (Mint Edition)</span>
+            <span className="text-[10px] text-teal-500 font-bold uppercase tracking-widest">Phrabaramee Repair Version 3.2</span>
           </div>
         </div>
       </div>
@@ -688,7 +829,7 @@ export default function App() {
             <button 
               onClick={fetchData} 
               disabled={loading}
-              className="p-2 text-slate-500 hover:text-teal-600 bg-slate-50 hover:bg-teal-50 rounded-xl border border-slate-100 transition-all"
+              className="p-2 text-slate-500 hover:text-teal-600 bg-slate-50 hover:bg-teal-55 rounded-xl border border-slate-100 transition-all"
               title="ดึงข้อมูลล่าสุด"
             >
               <Activity className={`w-4 h-4 ${loading ? 'animate-spin text-teal-600' : ''}`} />
@@ -704,44 +845,44 @@ export default function App() {
             <div className="space-y-6 animate-fadeIn">
               
               {/* แถบต้อนรับขนาดใหญ่ (Hero Header Area) */}
-              <div className="text-center py-8 bg-white border border-teal-100/80 rounded-3xl relative overflow-hidden shadow-sm">
+              <div className="text-center py-8 bg-white border border-teal-100 rounded-3xl relative overflow-hidden shadow-sm">
                 <div className="absolute inset-0 bg-gradient-to-r from-teal-500/5 to-emerald-500/5 pointer-events-none"></div>
                 <h1 className="text-3xl md:text-4xl font-black text-slate-900 tracking-wide">Repair System</h1>
                 <p className="text-sm text-teal-600 font-bold mt-1">ระบบลงทะเบียน แจ้งซ่อมบำรุง & ควบคุมครุภัณฑ์คอมพิวเตอร์ โรงพยาบาลพระบารมี</p>
               </div>
 
-              {/* สถิติ 3 ช่องแบบดั้งเดิมตามภาพ image_bd6999.jpg */}
+              {/* สถิติ 3 ช่องสะสมจำนวนยูนิตจริงในคลัง (แยกยูนิตครุภัณฑ์ และวัสดุเด็ดขาด ไม่เอายอดมารวมกัน) */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 
-                {/* 1. จำนวนครุภัณฑ์ */}
+                {/* 1. จำนวนครุภัณฑ์ทั้งหมด (ไม่นับรวมวัสดุอุปกรณ์) */}
                 <div className="bg-white p-6 rounded-2xl border border-slate-150 shadow-sm relative overflow-hidden hover:border-teal-300 transition-all flex flex-col justify-between">
                   <div className="flex justify-between items-center mb-3">
-                    <span className="text-sm font-extrabold text-slate-500 uppercase tracking-wider">จำนวนครุภัณฑ์</span>
+                    <span className="text-sm font-extrabold text-slate-500 uppercase tracking-wider">จำนวนครุภัณฑ์ทั้งหมด</span>
                     <div className="p-2 bg-teal-50 rounded-xl text-teal-600 border border-teal-100">
                       <Laptop className="w-5 h-5" />
                     </div>
                   </div>
                   <div>
-                    <h3 className="text-4xl font-black text-slate-800">{stats.total}</h3>
-                    <p className="text-xs text-slate-400 mt-1">รายการอุปกรณ์คอมพิวเตอร์และวัสดุทั้งหมด</p>
+                    <h3 className="text-4xl font-black text-slate-800">{stats.totalAssets} <span className="text-xs font-normal text-slate-400">เครื่อง/ชิ้น</span></h3>
+                    <p className="text-xs text-slate-400 mt-1">นับเฉพาะคอมพิวเตอร์ จอภาพ เครื่องพิมพ์ และระบบหลัก</p>
                   </div>
                 </div>
 
-                {/* 2. งานซ่อมที่ยังเปิด */}
+                {/* 2. งานซ่อมที่ยังเปิด (ครุภัณฑ์ที่เสียหาย) */}
                 <div className="bg-white p-6 rounded-2xl border border-slate-150 shadow-sm relative overflow-hidden hover:border-teal-300 transition-all flex flex-col justify-between">
                   <div className="flex justify-between items-center mb-3">
-                    <span className="text-sm font-extrabold text-amber-600 uppercase tracking-wider">งานซ่อมที่ยังเปิด</span>
+                    <span className="text-sm font-extrabold text-amber-600 uppercase tracking-wider">งานซ่อมค้าง</span>
                     <div className="p-2 bg-amber-50 rounded-xl text-amber-600 border border-amber-100">
                       <Wrench className="w-5 h-5 animate-pulse" />
                     </div>
                   </div>
                   <div>
-                    <h3 className="text-4xl font-black text-amber-600">{stats.repair}</h3>
-                    <p className="text-xs text-slate-400 mt-1">อยู่ระหว่างส่งซ่อมแซมจากทุกแผนก</p>
+                    <h3 className="text-4xl font-black text-amber-600">{stats.repair} <span className="text-xs font-normal text-amber-400">รายการ</span></h3>
+                    <p className="text-xs text-slate-400 mt-1">ครุภัณฑ์ที่อยู่ระหว่างส่งซ่อมแซมบำรุงรักษา</p>
                   </div>
                 </div>
 
-                {/* 3. จำนวนวัสดุคงคลังสะสม */}
+                {/* 3. จำนวนวัสดุคงคลังสะสม (เฉพาะกลุ่ม วัสดุ/อะไหล่/สำนักงาน ที่เหลืออยู่ในคลังจริงๆ) */}
                 <div className="bg-white p-6 rounded-2xl border border-slate-150 shadow-sm relative overflow-hidden hover:border-teal-300 transition-all flex flex-col justify-between">
                   <div className="flex justify-between items-center mb-3">
                     <span className="text-sm font-extrabold text-teal-600 uppercase tracking-wider">จำนวนวัสดุคงคลัง</span>
@@ -750,68 +891,68 @@ export default function App() {
                     </div>
                   </div>
                   <div>
-                    <h3 className="text-4xl font-black text-teal-600">{totalStockCount}</h3>
-                    <p className="text-xs text-slate-400 mt-1">อะไหล่สำรองคงเหลือสำหรับการเบิกใช้งาน</p>
+                    <h3 className="text-4xl font-black text-teal-600">{activeMaterialsCount} <span className="text-xs font-normal text-slate-400">ชิ้น</span></h3>
+                    <p className="text-xs text-slate-400 mt-1">อะไหล่ วัสดุ และอุปกรณ์สำนักงานสำรองคงคลังพร้อมจ่าย</p>
                   </div>
                 </div>
 
               </div>
 
-              {/* กล่องวิเคราะห์ยอดสะสมคลังและการนำไปใช้งาน */}
+              {/* กล่องวิเคราะห์ยอดสะสมคลังและการนำไปใช้งานสะสมจริง (แยกรายละเอียดของ ครุภัณฑ์ และ วัสดุอุปกรณ์) */}
               <div className="bg-white p-6 rounded-2xl border border-slate-150 shadow-sm space-y-4">
                 <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                   <h3 className="text-md font-bold text-slate-800 flex items-center gap-2">
-                    <BarChart3 className="w-5 h-5 text-teal-600" /> วิเคราะห์มูลค่าและคำนวณการใช้สอย
+                    <BarChart3 className="w-5 h-5 text-teal-600" /> วิเคราะห์ยอดคลังและการเบิกใช้สอยสะสมจริง (แยกหมวดหมู่)
                   </h3>
                   <span className="text-xs text-slate-400 font-semibold">อัปเดตแบบเรียลไทม์จากระบบคลาวด์</span>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
                   
-                  {/* ความคืบหน้า: นำไปใช้งานจริง */}
+                  {/* ความคืบหน้า: อัตราการติดตั้งใช้งาน ครุภัณฑ์หลัก */}
                   <div className="space-y-2 p-4 bg-teal-50/20 rounded-xl border border-teal-50">
                     <div className="flex justify-between text-xs font-semibold text-slate-500">
-                      <span className="flex items-center gap-1"><CheckCircle2 className="w-4 h-4 text-emerald-500" /> การนำไปใช้งานจริง</span>
-                      <span className="text-teal-700 font-bold">{totalUsageCount} ชิ้น ({usagePercentage}%)</span>
+                      <span className="flex items-center gap-1"><CheckCircle2 className="w-4 h-4 text-emerald-500" /> อัตราครุภัณฑ์หลักติดตั้งใช้งาน</span>
+                      <span className="text-teal-700 font-bold">{activeAssetsInUseCount} / {totalAssetsCount} เครื่อง ({assetsUsagePercentage}%)</span>
                     </div>
                     <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden">
-                      <div className="bg-teal-500 h-full rounded-full transition-all duration-500" style={{ width: `${usagePercentage}%` }}></div>
+                      <div className="bg-teal-500 h-full rounded-full transition-all duration-500" style={{ width: `${assetsUsagePercentage}%` }}></div>
                     </div>
-                    <p className="text-[11px] text-slate-400">คอมพิวเตอร์ที่ใช้งานให้บริการผู้ป่วยหรือสำนักงาน</p>
+                    <p className="text-[11px] text-slate-400">คิดเฉพาะครุภัณฑ์คอมพิวเตอร์หลักที่ส่งมอบใช้งานในหน่วยงาน</p>
                   </div>
 
-                  {/* ความคืบหน้า: ยอดคงคลัง/สำรอง */}
+                  {/* ความคืบหน้า: ยอดวัสดุอุปกรณ์สำรองคงคลัง */}
                   <div className="space-y-2 p-4 bg-teal-50/20 rounded-xl border border-teal-50">
                     <div className="flex justify-between text-xs font-semibold text-slate-500">
-                      <span className="flex items-center gap-1"><Package className="w-4 h-4 text-teal-600" /> ยอดคงคลัง / อะไหล่สำรอง</span>
-                      <span className="text-teal-700 font-bold">{totalStockCount} ชิ้น ({stockPercentage}%)</span>
+                      <span className="flex items-center gap-1"><Package className="w-4 h-4 text-teal-600" /> ยอดวัสดุอุปกรณ์คงคลังคงเหลือ</span>
+                      <span className="text-teal-700 font-bold">{activeMaterialsCount} / {totalMaterialsCount} รายการ ({materialsPercentage}%)</span>
                     </div>
                     <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden">
-                      <div className="bg-emerald-500 h-full rounded-full transition-all duration-500" style={{ width: `${stockPercentage}%` }}></div>
+                      <div className="bg-emerald-500 h-full rounded-full transition-all duration-500" style={{ width: `${materialsPercentage}%` }}></div>
                     </div>
-                    <p className="text-[11px] text-slate-400">วัสดุ อะไหล่ และอุปกรณ์สำรองพร้อมสลับใช้งานทันที</p>
+                    <p className="text-[11px] text-slate-400">คิดเฉพาะสัดส่วนวัสดุและอะไหล่สำนักงานคงเหลือพร้อมสำหรับการเบิกจ่าย</p>
                   </div>
 
-                  {/* ความคืบหน้า: ยอดเสียหายจำหน่ายออก */}
+                  {/* ความคืบหน้า: ยอดชำรุดรอจำหน่าย + แทงจำหน่ายสะสมรวม */}
                   <div className="space-y-2 p-4 bg-teal-50/20 rounded-xl border border-teal-50">
                     <div className="flex justify-between text-xs font-semibold text-slate-500">
-                      <span className="flex items-center gap-1"><Trash className="w-4 h-4 text-rose-500" /> ยอดเสียหาย / จำหน่ายออก</span>
-                      <span className="text-rose-700 font-bold">{totalDisposedCount} ชิ้น ({disposalPercentage}%)</span>
+                      <span className="flex items-center gap-1"><Trash className="w-4 h-4 text-rose-500" /> อัตราเสียหายสะสมระบบรวม</span>
+                      <span className="text-rose-700 font-bold">{totalDisposedCount} ชิ้น ({overallDisposalPercentage}%)</span>
                     </div>
                     <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden">
-                      <div className="bg-rose-500 h-full rounded-full transition-all duration-500" style={{ width: `${disposalPercentage}%` }}></div>
+                      <div className="bg-rose-500 h-full rounded-full transition-all duration-500" style={{ width: `${overallDisposalPercentage}%` }}></div>
                     </div>
-                    <p className="text-[11px] text-slate-400">ประวัติครุภัณฑ์เสื่อมสภาพที่ดำเนินการจำหน่ายประจำปี</p>
+                    <p className="text-[11px] text-slate-400">ครุภัณฑ์และวัสดุเสื่อมสภาพที่ดำเนินการเตรียมทำลาย/จำหน่ายสะสม</p>
                   </div>
 
                 </div>
               </div>
 
-              {/* หมวดหมู่ไอคอนด่วน 6 ช่อง สไตล์กล่อง image_bd6999.jpg (สามารถกดได้จริงเพื่อดูและค้นหา) */}
+              {/* หมวดหมู่ไอคอนด่วน 6 ช่อง สไตล์กล่อง image_bd6999.jpg */}
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
-                  <h4 className="text-xs font-extrabold text-slate-500 tracking-wider uppercase">สืบค้นด่วนจากประเภทครุภัณฑ์ (สามารถคลิกเพื่อกรองค้นหาได้)</h4>
-                  <span className="text-xs text-slate-400 font-bold">รวม 6 หมวดหมู่ใช้งานหลัก</span>
+                  <h4 className="text-xs font-extrabold text-slate-500 tracking-wider uppercase">สืบค้นด่วนจากประเภทครุภัณฑ์ (คลิกเพื่อค้นหารายการทันที)</h4>
+                  <span className="text-xs text-slate-400 font-bold">รวมจำนวนยูนิตแยกตามกลุ่ม</span>
                 </div>
                 
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
@@ -825,7 +966,7 @@ export default function App() {
                       <Printer className="w-6 h-6" />
                     </div>
                     <span className="text-sm font-bold text-slate-800">เครื่องพิมพ์</span>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-bold mt-1.5">{categorySummary.printer} เครื่อง</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-bold mt-1.5">{categorySummary.printer} ยูนิต</span>
                   </button>
 
                   {/* 2. จอภาพ */}
@@ -837,7 +978,7 @@ export default function App() {
                       <Monitor className="w-6 h-6" />
                     </div>
                     <span className="text-sm font-bold text-slate-800">จอภาพ / มอนิเตอร์</span>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-bold mt-1.5">{categorySummary.monitor} เครื่อง</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-bold mt-1.5">{categorySummary.monitor} ยูนิต</span>
                   </button>
 
                   {/* 3. คีย์บอร์ด / อุปกรณ์เสริม */}
@@ -849,10 +990,10 @@ export default function App() {
                       <Cpu className="w-6 h-6" />
                     </div>
                     <span className="text-sm font-bold text-slate-800">อุปกรณ์เครือข่าย/เสริม</span>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-bold mt-1.5">{categorySummary.network} อุปกรณ์</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-bold mt-1.5">{categorySummary.network} ยูนิต</span>
                   </button>
 
-                  {/* 4. วัสดุอะไหล่ */}
+                  {/* 4. วัสดุอะไหล่ (เฉพาะวัสดุไม่นับรวมกับครุภัณฑ์) */}
                   <button 
                     onClick={() => handleCategoryClick('วัสดุ/อะไหล่/สำนักงาน')}
                     className="p-6 bg-white border border-slate-150 rounded-2xl hover:border-teal-500 hover:shadow-md hover:bg-teal-50/10 transition-all flex flex-col items-center justify-center text-center group"
@@ -873,7 +1014,7 @@ export default function App() {
                       <Laptop className="w-6 h-6" />
                     </div>
                     <span className="text-sm font-bold text-slate-800">คอมพิวเตอร์ / โน้ตบุ๊ก</span>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-bold mt-1.5">{categorySummary.computer} เครื่อง</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-bold mt-1.5">{categorySummary.computer} ยูนิต</span>
                   </button>
 
                   {/* 6. เซิร์ฟเวอร์ */}
@@ -885,7 +1026,7 @@ export default function App() {
                       <Server className="w-6 h-6" />
                     </div>
                     <span className="text-sm font-bold text-slate-800">ระบบเซิร์ฟเวอร์</span>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-bold mt-1.5">{categorySummary.server} ระบบ</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-bold mt-1.5">{categorySummary.server} ยูนิต</span>
                   </button>
 
                 </div>
@@ -919,7 +1060,7 @@ export default function App() {
                   {searchTerm && (
                     <button 
                       onClick={() => setSearchTerm('')}
-                      className="text-xs text-rose-500 hover:text-rose-700 font-bold underline"
+                      className="text-xs text-rose-500 hover:text-rose-700 font-bold underline animate-pulse"
                     >
                       ล้างการกรองข้อมูล
                     </button>
@@ -948,6 +1089,7 @@ export default function App() {
                       <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold text-xs tracking-wider uppercase">
                         <tr>
                           <th className="px-6 py-4">อุปกรณ์ / สเปกเครื่อง</th>
+                          <th className="px-6 py-4">จำนวนยูนิต</th>
                           <th className="px-6 py-4">Serial Number</th>
                           <th className="px-6 py-4">หมวดหมู่</th>
                           <th className="px-6 py-4">วันที่ / ปีที่ซื้อ</th>
@@ -973,6 +1115,11 @@ export default function App() {
                                   )}
                                 </div>
                               </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold ${item.category === 'วัสดุ/อะไหล่/สำนักงาน' ? 'bg-slate-100 text-slate-700 border border-slate-200' : 'bg-teal-50 text-teal-700 border border-teal-100'}`}>
+                                {item.quantity || 1} ชิ้น
+                              </span>
                             </td>
                             <td className="px-6 py-4 text-slate-500 font-mono text-xs">{item.serial || '-'}</td>
                             <td className="px-6 py-4 text-slate-600 font-semibold">{item.category}</td>
@@ -1002,9 +1149,16 @@ export default function App() {
                             <td className="px-6 py-4 text-right">
                               <div className="flex items-center justify-end gap-1 md:opacity-0 group-hover:opacity-100 transition-all">
                                 <button 
+                                  onClick={() => openQtyModal(item)}
+                                  className="p-1.5 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-all"
+                                  title="เบิกจ่าย / ปรับยอด"
+                                >
+                                  <ArrowLeftRight className="w-4 h-4" />
+                                </button>
+                                <button 
                                   onClick={() => openModal(item)} 
                                   className="p-1.5 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-all"
-                                  title="แก้ไข"
+                                  title="แก้ไขข้อมูลหลัก"
                                 >
                                   <Edit3 className="w-4.5 h-4.5" />
                                 </button>
@@ -1044,7 +1198,7 @@ export default function App() {
                 </div>
                 <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200">
                   <span className="text-xs text-slate-500 font-bold">ส่งซ่อมทั้งหมด:</span>
-                  <span className="text-xs font-extrabold text-amber-600">{stats.repair} เครื่อง</span>
+                  <span className="text-xs font-extrabold text-amber-600">{stats.repair} ชิ้น</span>
                 </div>
               </div>
 
@@ -1064,6 +1218,7 @@ export default function App() {
                       <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold text-xs uppercase tracking-wider">
                         <tr>
                           <th className="px-6 py-4">อุปกรณ์ / สเปก</th>
+                          <th className="px-6 py-4">จำนวนส่งซ่อม</th>
                           <th className="px-6 py-4">Serial Number</th>
                           <th className="px-6 py-4">ผู้ถือครองคนล่าสุด</th>
                           <th className="px-6 py-4">สถานะปัจจุบัน</th>
@@ -1084,6 +1239,9 @@ export default function App() {
                                 </div>
                               </div>
                             </td>
+                            <td className="px-6 py-4">
+                              <span className="text-slate-700 font-semibold">{item.quantity || 1} ชิ้น</span>
+                            </td>
                             <td className="px-6 py-4 text-slate-500 font-mono text-xs">{item.serial || '-'}</td>
                             <td className="px-6 py-4 text-slate-600">{item.owner || 'ไม่มีผู้ครอบครอง'}</td>
                             <td className="px-6 py-4">
@@ -1097,11 +1255,11 @@ export default function App() {
                                   onClick={() => quickUpdateStatus(item, 'ใช้งานปกติ')}
                                   className="px-3 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-xl border border-emerald-200 transition-all flex items-center gap-1.5"
                                 >
-                                  <CheckCircle2 className="w-3.5 h-3.5" /> ซ่อมเสร็จ (ปรับสถานะปกติ)
+                                  <CheckCircle2 className="w-3.5 h-3.5" /> ซ่อมเสร็จ (ใช้งานปกติ)
                                 </button>
                                 <button 
                                   onClick={() => quickUpdateStatus(item, 'รอจำหน่าย')}
-                                  className="px-3 py-1.5 text-xs font-bold text-orange-700 bg-orange-50 hover:bg-orange-100 rounded-xl border border-orange-200 transition-all flex items-center gap-1.5"
+                                  className="px-3 py-1.5 text-xs font-bold text-orange-750 bg-orange-50 hover:bg-orange-100 rounded-xl border border-orange-200 transition-all flex items-center gap-1.5"
                                 >
                                   <Clock className="w-3.5 h-3.5" /> ปรับเป็น "รอจำหน่าย"
                                 </button>
@@ -1137,11 +1295,11 @@ export default function App() {
                 <div className="flex gap-2">
                   <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-xs">
                     <span className="text-xs text-slate-500 font-bold">รอจำหน่าย:</span>
-                    <span className="text-xs font-extrabold text-orange-600">{stats.pendingDisposal} รายการ</span>
+                    <span className="text-xs font-extrabold text-orange-600">{stats.pendingDisposal} ชิ้น</span>
                   </div>
                   <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-xs">
                     <span className="text-xs text-slate-500 font-bold">แทงจำหน่าย:</span>
-                    <span className="text-xs font-extrabold text-slate-500">{stats.disposed} รายการ</span>
+                    <span className="text-xs font-extrabold text-slate-500">{stats.disposed} ชิ้น</span>
                   </div>
                 </div>
               </div>
@@ -1162,6 +1320,7 @@ export default function App() {
                       <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold text-xs uppercase tracking-wider">
                         <tr>
                           <th className="px-6 py-4">อุปกรณ์ / สเปก</th>
+                          <th className="px-6 py-4">จำนวนจำหน่าย</th>
                           <th className="px-6 py-4">Serial Number</th>
                           <th className="px-6 py-4">ผู้ครอบครองรายล่าสุด</th>
                           <th className="px-6 py-4">วันที่ซื้อมา</th>
@@ -1184,6 +1343,7 @@ export default function App() {
                                 </div>
                               </div>
                             </td>
+                            <td className="px-6 py-4 text-slate-700 font-semibold">{item.quantity || 1} ชิ้น</td>
                             <td className="px-6 py-4 text-slate-500 font-mono text-xs">{item.serial || '-'}</td>
                             <td className="px-6 py-4 text-slate-600">{item.owner || 'ไม่มีผู้ครอบครอง'}</td>
                             <td className="px-6 py-4 text-slate-500 text-xs font-mono">{item.purchaseDate || '-'}</td>
@@ -1262,7 +1422,7 @@ export default function App() {
                   type="text" 
                   value={formData.name}
                   onChange={e => setFormData({...formData, name: e.target.value})}
-                  className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all text-sm placeholder-slate-400"
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-250 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all text-sm placeholder-slate-400"
                   placeholder="เช่น Dell Optiplex 7090, จอ Monitor LG 24"
                 />
               </div>
@@ -1274,7 +1434,7 @@ export default function App() {
                   type="text" 
                   value={formData.specs}
                   onChange={e => setFormData({...formData, specs: e.target.value})}
-                  className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all text-sm placeholder-slate-400"
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-250 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all text-sm placeholder-slate-400"
                   placeholder="เช่น Windows 11 Pro, CPU Core i5, RAM 16GB, SSD 512"
                 />
               </div>
@@ -1286,7 +1446,7 @@ export default function App() {
                   <select 
                     value={formData.category}
                     onChange={e => setFormData({...formData, category: e.target.value})}
-                    className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/20 text-sm"
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-250 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/20 text-sm"
                   >
                     <option value="คอมพิวเตอร์">คอมพิวเตอร์</option>
                     <option value="จอมอนิเตอร์">จอมอนิเตอร์</option>
@@ -1303,7 +1463,7 @@ export default function App() {
                     type="text" 
                     value={formData.serial}
                     onChange={e => setFormData({...formData, serial: e.target.value})}
-                    className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/20 text-sm font-mono placeholder-slate-400"
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-250 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/20 text-sm font-mono placeholder-slate-400"
                     placeholder="S/N: 7X8Y9Z..."
                   />
                 </div>
@@ -1317,7 +1477,7 @@ export default function App() {
                     type="text" 
                     value={formData.purchaseDate}
                     onChange={e => setFormData({...formData, purchaseDate: e.target.value})}
-                    className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/20 text-sm placeholder-slate-400 font-mono"
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-250 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/20 text-sm placeholder-slate-400 font-mono"
                     placeholder="เช่น 25/06/2569 หรือ ปี 2568"
                   />
                 </div>
@@ -1327,14 +1487,26 @@ export default function App() {
                     type="text" 
                     value={formData.owner}
                     onChange={e => setFormData({...formData, owner: e.target.value})}
-                    className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/20 text-sm placeholder-slate-400"
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-250 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/20 text-sm placeholder-slate-400"
                     placeholder="เช่น แผนกผู้ป่วยนอก, นายสมเกียรติ"
                   />
                 </div>
               </div>
 
-              {/* สถานะปัจจุบัน และ วันที่จำหน่าย */}
+              {/* จำนวนวัสดุ และสถานะปัจจุบัน */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1.5">จำนวนของอุปกรณ์/วัสดุ</label>
+                  <input 
+                    required
+                    type="number" 
+                    min="1"
+                    value={formData.quantity}
+                    onChange={e => setFormData({...formData, quantity: parseInt(e.target.value) || 1})}
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-250 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/20 text-sm font-semibold"
+                    placeholder="1"
+                  />
+                </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 mb-1.5">สถานะการทำงาน</label>
                   <select 
@@ -1343,12 +1515,11 @@ export default function App() {
                       const selectedStatus = e.target.value;
                       let updateDisposalDate = formData.disposalDate;
                       
-                      // เติมวันที่จำหน่ายอัตโนมัติหากมีการเลือกจำหน่าย
                       if ((selectedStatus === 'รอจำหน่าย' || selectedStatus === 'แทงจำหน่าย') && !formData.disposalDate) {
                         const today = new Date();
                         updateDisposalDate = today.toISOString().split('T')[0];
                       } else if (selectedStatus !== 'รอจำหน่าย' && selectedStatus !== 'แทงจำหน่าย') {
-                        updateDisposalDate = ''; // ปรับเป็นว่างหากเปลี่ยนกลับไปใช้ปกติ
+                        updateDisposalDate = ''; 
                       }
                       
                       setFormData({
@@ -1357,7 +1528,7 @@ export default function App() {
                         disposalDate: updateDisposalDate
                       });
                     }}
-                    className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/20 text-sm"
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-250 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/20 text-sm"
                   >
                     <option value="ใช้งานปกติ">ใช้งานปกติ</option>
                     <option value="ส่งซ่อม">ส่งซ่อม</option>
@@ -1366,20 +1537,20 @@ export default function App() {
                     <option value="แทงจำหน่าย">แทงจำหน่าย</option>
                   </select>
                 </div>
-
-                {/* วันเดือนปีที่บันทึกจำหน่าย */}
-                {(formData.status === 'รอจำหน่าย' || formData.status === 'แทงจำหน่าย') && (
-                  <div>
-                    <label className="block text-xs font-semibold text-orange-600 mb-1.5">วันเดือนปีที่บันทึกจำหน่าย</label>
-                    <input 
-                      type="date" 
-                      value={formData.disposalDate}
-                      onChange={e => setFormData({...formData, disposalDate: e.target.value})}
-                      className="w-full px-3.5 py-2.5 bg-white border border-orange-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500/20 text-sm font-mono"
-                    />
-                  </div>
-                )}
               </div>
+
+              {/* วันเดือปีที่บันทึกจำหน่าย */}
+              {(formData.status === 'รอจำหน่าย' || formData.status === 'แทงจำหน่าย') && (
+                <div>
+                  <label className="block text-xs font-semibold text-orange-600 mb-1.5">วันเดือนปีที่บันทึกจำหน่าย</label>
+                  <input 
+                    type="date" 
+                    value={formData.disposalDate}
+                    onChange={e => setFormData({...formData, disposalDate: e.target.value})}
+                    className="w-full px-3.5 py-2.5 bg-white border border-orange-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500/20 text-sm font-mono"
+                  />
+                </div>
+              )}
 
               <div className="pt-4 mt-6 border-t border-slate-100 flex justify-end gap-3">
                 <button 
@@ -1402,8 +1573,120 @@ export default function App() {
         </div>
       )}
 
+      {/* --- MODAL FOR INVENTORY DISPATCH & STOCK MANAGEMENT (เบิกจ่าย / ปรับยอดวัสดุอุปกรณ์) --- */}
+      {isManageQtyModalOpen && selectedQtyItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs" onClick={() => setIsManageQtyModalOpen(false)}></div>
+          <div className="relative w-full max-w-md bg-white border border-slate-200 shadow-2xl rounded-2xl overflow-hidden transform transition-all">
+            
+            <div className="px-6 py-4 border-b border-slate-150 flex justify-between items-center bg-teal-50/50">
+              <h2 className="text-md font-bold text-slate-900 flex items-center gap-2">
+                <ArrowLeftRight className="w-5 h-5 text-teal-600" />
+                เบิกจ่าย / ปรับสต๊อกคงคลัง
+              </h2>
+              <button onClick={() => setIsManageQtyModalOpen(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleQtySubmit} className="p-6 space-y-4">
+              {/* รายละเอียดวัสดุอุปกรณ์ปัจจุบัน */}
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-1">
+                <span className="text-[10px] uppercase font-bold text-teal-600 tracking-wider">รายการที่เลือก</span>
+                <p className="text-sm font-bold text-slate-800">{selectedQtyItem.name}</p>
+                {selectedQtyItem.specs && <p className="text-xs text-slate-500">สเปก: {selectedQtyItem.specs}</p>}
+                <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-200/50">
+                  <span className="text-xs text-slate-500">ยอดจำนวนคงคลังขณะนี้:</span>
+                  <span className="text-sm font-black text-slate-800">{selectedQtyItem.quantity || 1} ชิ้น</span>
+                </div>
+              </div>
+
+              {/* เลือกประเภทการทำรายการ */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-500">ประเภทการดำเนินการ</label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setQtyAction('use'); setQtyValue(1); }}
+                    className={`py-2 px-1 text-center text-xs font-bold border rounded-xl transition-all ${qtyAction === 'use' ? 'bg-teal-50 border-teal-500 text-teal-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    เบิกไปใช้งาน
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setQtyAction('dispose'); setQtyValue(1); }}
+                    className={`py-2 px-1 text-center text-xs font-bold border rounded-xl transition-all ${qtyAction === 'dispose' ? 'bg-orange-50 border-orange-500 text-orange-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    แทงจำหน่าย
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setQtyAction('adjust'); setQtyValue(parseInt(selectedQtyItem.quantity) || 1); }}
+                    className={`py-2 px-1 text-center text-xs font-bold border rounded-xl transition-all ${qtyAction === 'adjust' ? 'bg-slate-100 border-slate-500 text-slate-800' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    ปรับยอดสต๊อก
+                  </button>
+                </div>
+              </div>
+
+              {/* ป้อนจำนวนชิ้นที่ต้องการโยกย้าย */}
+              <div className="grid grid-cols-1 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1">
+                    {qtyAction === 'use' && 'จำนวนที่ต้องการเบิกใช้งาน'}
+                    {qtyAction === 'dispose' && 'จำนวนที่ชำรุดเสียหาย / สั่งทำลาย'}
+                    {qtyAction === 'adjust' && 'แก้ไขยอดสต๊อกโดยตรงเป็นจำนวน'}
+                  </label>
+                  <input
+                    required
+                    type="number"
+                    min="1"
+                    max={qtyAction !== 'adjust' ? (selectedQtyItem.quantity || 1) : undefined}
+                    value={qtyValue}
+                    onChange={e => setQtyValue(parseInt(e.target.value) || 1)}
+                    className="w-full px-3 py-2 bg-white border border-slate-250 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/20 text-sm font-bold"
+                  />
+                </div>
+              </div>
+
+              {/* ช่องระบุผู้รับ / แผนก ในกรณีเบิกไปติดตั้งใช้งาน */}
+              {qtyAction === 'use' && (
+                <div className="animate-fadeIn">
+                  <label className="block text-xs font-bold text-slate-550 mb-1">ชื่อผู้เบิก / แผนกที่นำไปติดตั้งใช้งานจริง</label>
+                  <input
+                    required
+                    type="text"
+                    value={qtyRecipient}
+                    onChange={e => setQtyRecipient(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-slate-250 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/20 text-sm"
+                    placeholder="เช่น แผนกฉุกเฉิน (ER), นายสมรักษ์"
+                  />
+                </div>
+              )}
+
+              <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsManageQtyModalOpen(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="px-5 py-2 text-xs font-bold bg-teal-600 hover:bg-teal-500 text-white rounded-xl shadow-md transition-all disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {loading ? 'กำลังหักยอด...' : 'ยืนยันทำรายการ'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Loading Indicator แบบ Global */}
-      {loading && !isModalOpen && (
+      {loading && !isModalOpen && !isManageQtyModalOpen && (
         <div className="fixed bottom-6 right-6 bg-teal-600 text-white px-4 py-3 rounded-2xl shadow-xl text-sm flex items-center gap-2 z-50 transition-all">
           <Activity className="w-4 h-4 animate-spin" />
           <span className="font-semibold">กำลังดำเนินการซิงก์ข้อมูล...</span>
