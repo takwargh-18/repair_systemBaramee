@@ -5,13 +5,13 @@ import {
   AlertCircle, CheckCircle2, XCircle, HardDrive,
   LayoutDashboard, Wrench, Trash, LogOut, User, Lock, Menu, X, 
   Clock, ArrowUpRight, ShieldAlert, ClipboardList,
-  Package, Calendar, Sliders
+  Package, Calendar, Sliders, Database, BarChart3
 } from 'lucide-react';
 
 // URL ของ Google Apps Script Web App
 const GAS_URL = "https://script.google.com/macros/s/AKfycbxhsIVIDTXAV0agoOLI3KDOuXPUx2Gy6EBmMRpn2cPIq38gPkxJmFZ_Ag5EXCqslViOyQ/exec";  
 
-// บัญชีล็อกอินเบื้องต้น
+// บัญชีล็อกอิน (รหัสผ่านตามไฟล์ App_2.jsx คือ 11288)
 const DEFAULT_AUTH = {
   username: "admin",
   password: "11288" 
@@ -212,6 +212,13 @@ export default function App() {
     setLoading(false);
   };
 
+  // ฟังก์ชันสลับไปหน้าทะเบียนครุภัณฑ์พร้อมกรองหมวดหมู่ที่ถูกคลิก
+  const handleCategoryClick = (categoryName) => {
+    setSearchTerm(categoryName);
+    setCurrentTab('assets');
+    showAlert(`กรองข้อมูลตามหมวดหมู่: ${categoryName}`);
+  };
+
   const openModal = (item = null) => {
     if (item) {
       setEditingItem(item);
@@ -246,11 +253,25 @@ export default function App() {
   // คำนวณ Metric สถิติต่างๆ สำหรับหน้า Dashboard
   const stats = {
     total: equipment.length,
-    active: equipment.filter(item => item.status === 'ใช้งานปกติ' || item.status === 'สำรอง').length,
+    active: equipment.filter(item => item.status === 'ใช้งานปกติ').length,
+    backup: equipment.filter(item => item.status === 'สำรอง').length,
     repair: equipment.filter(item => item.status === 'ส่งซ่อม').length,
     pendingDisposal: equipment.filter(item => item.status === 'รอจำหน่าย').length,
     disposed: equipment.filter(item => item.status === 'แทงจำหน่าย').length,
   };
+
+  // คำนวณตามต้องการ:
+  // 1. คงคลัง (อุปกรณ์สถานะ 'สำรอง' และหมวดหมู่ 'วัสดุ/อะไหล่/สำนักงาน')
+  const totalStockCount = equipment.filter(item => item.status === 'สำรอง' || item.category === 'วัสดุ/อะไหล่/สำนักงาน').length;
+  // 2. การนำไปใช้งานจริง (อุปกรณ์สถานะ 'ใช้งานปกติ')
+  const totalUsageCount = equipment.filter(item => item.status === 'ใช้งานปกติ').length;
+  // 3. เสียจำหน่าย (รวม 'รอจำหน่าย' และ 'แทงจำหน่าย')
+  const totalDisposedCount = equipment.filter(item => item.status === 'รอจำหน่าย' || item.status === 'แทงจำหน่าย').length;
+
+  // เปอร์เซ็นต์ความคืบหน้าเชิงสถิติ (หลีกเลี่ยงการหารด้วยศูนย์)
+  const usagePercentage = stats.total > 0 ? Math.round((totalUsageCount / stats.total) * 100) : 0;
+  const stockPercentage = stats.total > 0 ? Math.round((totalStockCount / stats.total) * 100) : 0;
+  const disposalPercentage = stats.total > 0 ? Math.round((totalDisposedCount / stats.total) * 100) : 0;
 
   // หมวดหมู่และสถิติการใช้งานแยกตามประเภทอุปกรณ์
   const categorySummary = {
@@ -260,24 +281,24 @@ export default function App() {
     server: equipment.filter(item => item.category === 'เซิร์ฟเวอร์').length,
     network: equipment.filter(item => item.category === 'อุปกรณ์เครือข่าย').length,
     material: equipment.filter(item => item.category === 'วัสดุ/อะไหล่/สำนักงาน').length,
-    other: equipment.filter(item => !['คอมพิวเตอร์', 'จอมอนิเตอร์', 'เครื่องพิมพ์', 'เซิร์ฟเวอร์', 'อุปกรณ์เครือข่าย', 'วัสดุ/อะไหล่/สำนักงาน'].includes(item.category)).length,
   };
 
-  // การกรองคำค้นหา
+  // การกรองคำค้นหาในตาราง
   const filteredEquipment = equipment.filter(item => 
     (item.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
     (item.serial || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (item.owner || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (item.specs || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (item.purchaseDate || '').toLowerCase().includes(searchTerm.toLowerCase())
+    (item.purchaseDate || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (item.category || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const getCategoryIcon = (category) => {
     switch (category) {
-      case 'คอมพิวเตอร์': return <Laptop className="w-5 h-5 text-sky-600" />;
-      case 'จอมอนิเตอร์': return <Monitor className="w-5 h-5 text-cyan-600" />;
-      case 'เครื่องพิมพ์': return <Printer className="w-5 h-5 text-sky-600" />;
-      case 'เซิร์ฟเวอร์': return <Server className="w-5 h-5 text-indigo-600" />;
+      case 'คอมพิวเตอร์': return <Laptop className="w-5 h-5 text-teal-600" />;
+      case 'จอมอนิเตอร์': return <Monitor className="w-5 h-5 text-emerald-600" />;
+      case 'เครื่องพิมพ์': return <Printer className="w-5 h-5 text-teal-600" />;
+      case 'เซิร์ฟเวอร์': return <Server className="w-5 h-5 text-emerald-700" />;
       case 'วัสดุ/อะไหล่/สำนักงาน': return <Package className="w-5 h-5 text-slate-500" />;
       default: return <HardDrive className="w-5 h-5 text-slate-500" />;
     }
@@ -311,7 +332,7 @@ export default function App() {
         );
       default:
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-teal-50 text-teal-700 border border-teal-200">
             {status}
           </span>
         );
@@ -320,20 +341,20 @@ export default function App() {
 
   // --- RENDERING VIEWS ---
 
-  // 1. หน้าจอล็อกอิน (Login Screen) - โทนสว่าง คลีน สะอาดตา
+  // 1. หน้าจอล็อกอิน (Login Screen) - โทนสว่าง มิ้นต์สะอาดตา
   if (!isLoggedIn) {
     return (
-      <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans">
-        {/* แสงเรืองรองโทนสีฟ้าพาสเทล */}
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-sky-100/50 rounded-full blur-3xl"></div>
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-slate-200/50 rounded-full blur-3xl"></div>
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans">
+        {/* แสงเรืองรองโทนสีมิ้นต์พาสเทล */}
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-teal-50/60 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-emerald-50/50 rounded-full blur-3xl"></div>
 
-        <div className="w-full max-w-md bg-white border border-slate-200 rounded-3xl p-8 shadow-xl relative z-10">
+        <div className="w-full max-w-md bg-white border border-teal-100 rounded-3xl p-8 shadow-xl shadow-teal-500/5 relative z-10">
           <div className="flex flex-col items-center mb-8">
-            <div className="p-3.5 bg-sky-50 rounded-2xl border border-sky-100 shadow-sm mb-3">
-              <Cpu className="w-8 h-8 text-sky-600" />
+            <div className="p-3.5 bg-teal-50 rounded-2xl border border-teal-100 shadow-sm mb-3">
+              <Cpu className="w-8 h-8 text-teal-600" />
             </div>
-            <h1 className="text-2xl font-bold text-slate-900 tracking-wide">IT Baramee<span className="text-sky-600">Computer</span></h1>
+            <h1 className="text-2xl font-bold text-slate-900 tracking-wide">IT Baramee<span className="text-teal-600">Computer</span></h1>
             <p className="text-xs text-slate-500 mt-1">ระบบลงทะเบียนและควบคุมสถานะครุภัณฑ์ไอที</p>
           </div>
 
@@ -348,7 +369,7 @@ export default function App() {
                   placeholder="admin"
                   value={loginForm.username}
                   onChange={(e) => setLoginForm({...loginForm, username: e.target.value})}
-                  className="w-full pl-10 pr-4 py-3 bg-white border border-slate-250 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 text-sm text-slate-900 placeholder-slate-400"
+                  className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 text-sm text-slate-900 placeholder-slate-400"
                 />
               </div>
             </div>
@@ -363,7 +384,7 @@ export default function App() {
                   placeholder="••••"
                   value={loginForm.password}
                   onChange={(e) => setLoginForm({...loginForm, password: e.target.value})}
-                  className="w-full pl-10 pr-4 py-3 bg-white border border-slate-250 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 text-sm text-slate-900 placeholder-slate-400"
+                  className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 text-sm text-slate-900 placeholder-slate-400"
                 />
               </div>
             </div>
@@ -377,14 +398,14 @@ export default function App() {
 
             <button
               type="submit"
-              className="w-full py-3 bg-sky-600 hover:bg-sky-500 text-white rounded-xl shadow-md shadow-sky-600/10 font-bold text-sm tracking-wide transition-all duration-200 mt-2 flex justify-center items-center gap-2"
+              className="w-full py-3 bg-teal-600 hover:bg-teal-500 text-white rounded-xl shadow-md shadow-teal-600/10 font-bold text-sm tracking-wide transition-all duration-200 mt-2 flex justify-center items-center gap-2"
             >
               ลงชื่อเข้าใช้งาน <ArrowUpRight className="w-4 h-4" />
             </button>
           </form>
 
           <div className="mt-8 text-center border-t border-slate-100 pt-4">
-            <span className="text-[10px] text-slate-400 uppercase tracking-widest">Phrabaramee Repair Version 2.5 (Light)</span>
+            <span className="text-[10px] text-teal-500 font-bold uppercase tracking-widest">Phrabaramee Repair Version 3 (Mint Edition)</span>
           </div>
         </div>
       </div>
@@ -392,15 +413,15 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] text-slate-800 font-sans selection:bg-sky-100 flex">
+    <div className="min-h-screen bg-white text-slate-800 font-sans selection:bg-teal-100 flex">
       
       {/* Toast Notification */}
       {alertMessage && (
-        <div className="fixed top-5 right-5 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl border animate-bounce shadow-xl bg-white border-slate-200">
+        <div className="fixed top-5 right-5 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl border animate-bounce shadow-xl bg-white border-teal-200">
           {alertMessage.type === 'error' ? (
             <XCircle className="w-5 h-5 text-rose-500" />
           ) : (
-            <CheckCircle2 className="w-5 h-5 text-sky-500" />
+            <CheckCircle2 className="w-5 h-5 text-teal-500" />
           )}
           <span className="text-sm font-semibold text-slate-800">{alertMessage.message}</span>
         </div>
@@ -435,15 +456,15 @@ export default function App() {
       )}
 
       {/* --- SIDEBAR DESKTOP --- */}
-      <aside className="hidden lg:flex flex-col w-64 bg-white border-r border-slate-200 shrink-0 justify-between p-4 sticky top-0 h-screen shadow-sm">
+      <aside className="hidden lg:flex flex-col w-64 bg-white border-r border-slate-100 shrink-0 justify-between p-4 sticky top-0 h-screen shadow-sm">
         <div className="space-y-6">
           {/* Logo */}
           <div className="flex items-center gap-3 px-2 py-3 border-b border-slate-100">
-            <div className="p-2.5 bg-sky-50 rounded-xl border border-sky-100 shadow-sm">
-              <Cpu className="w-5 h-5 text-sky-600" />
+            <div className="p-2.5 bg-teal-50 rounded-xl border border-teal-100 shadow-sm">
+              <Cpu className="w-5 h-5 text-teal-600" />
             </div>
             <div>
-              <h1 className="text-md font-bold text-slate-900 tracking-wide">Phrabaramee<span className="text-sky-600">Repair</span></h1>
+              <h1 className="text-md font-bold text-slate-900 tracking-wide">Phrabaramee<span className="text-teal-600">Repair</span></h1>
               <p className="text-[10px] text-slate-400">ระบบคลังครุภัณฑ์และการจัดการ</p>
             </div>
           </div>
@@ -454,7 +475,7 @@ export default function App() {
               onClick={() => setCurrentTab('dashboard')}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-bold transition-all ${
                 currentTab === 'dashboard' 
-                  ? 'bg-sky-50 text-sky-700 border border-sky-100/50' 
+                  ? 'bg-teal-50 text-teal-700 border border-teal-100/50' 
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
               }`}
             >
@@ -465,10 +486,10 @@ export default function App() {
             </button>
 
             <button 
-              onClick={() => setCurrentTab('assets')}
+              onClick={() => { setSearchTerm(''); setCurrentTab('assets'); }}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-bold transition-all ${
                 currentTab === 'assets' 
-                  ? 'bg-sky-50 text-sky-700 border border-sky-100/50' 
+                  ? 'bg-teal-50 text-teal-700 border border-teal-100/50' 
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
               }`}
             >
@@ -476,14 +497,14 @@ export default function App() {
                 <ClipboardList className="w-4 h-4" />
                 <span>ทะเบียนครุภัณฑ์</span>
               </div>
-              <span className={`text-xs px-2 py-0.5 rounded-md font-bold ${currentTab === 'assets' ? 'bg-sky-200 text-sky-800' : 'bg-slate-100 text-slate-500'}`}>{stats.total}</span>
+              <span className={`text-xs px-2 py-0.5 rounded-md font-bold ${currentTab === 'assets' ? 'bg-teal-200 text-teal-800' : 'bg-slate-100 text-slate-500'}`}>{stats.total}</span>
             </button>
 
             <button 
               onClick={() => setCurrentTab('maintenance')}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-bold transition-all ${
                 currentTab === 'maintenance' 
-                  ? 'bg-sky-50 text-sky-700 border border-sky-100/50' 
+                  ? 'bg-teal-50 text-teal-700 border border-teal-100/50' 
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
               }`}
             >
@@ -502,7 +523,7 @@ export default function App() {
               onClick={() => setCurrentTab('disposal')}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-bold transition-all ${
                 currentTab === 'disposal' 
-                  ? 'bg-sky-50 text-sky-700 border border-sky-100/50' 
+                  ? 'bg-teal-50 text-teal-700 border border-teal-100/50' 
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
               }`}
             >
@@ -522,7 +543,7 @@ export default function App() {
         {/* User Info & Logout (IT TAK) */}
         <div className="border-t border-slate-100 pt-4 space-y-3">
           <div className="flex items-center gap-2.5 px-2">
-            <div className="w-8 h-8 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center font-bold border border-sky-100">
+            <div className="w-8 h-8 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center font-bold border border-teal-100">
               AD
             </div>
             <div>
@@ -544,11 +565,11 @@ export default function App() {
       {isMobileMenuOpen && (
         <div className="lg:hidden fixed inset-0 z-40 flex">
           <div className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)}></div>
-          <div className="relative flex flex-col w-64 max-w-xs bg-white border-r border-slate-200 p-4 justify-between h-full">
+          <div className="relative flex flex-col w-64 max-w-xs bg-white border-r border-slate-100 p-4 justify-between h-full">
             <div className="space-y-6">
               <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                 <div className="flex items-center gap-2.5">
-                  <Cpu className="w-5 h-5 text-sky-600" />
+                  <Cpu className="w-5 h-5 text-teal-600" />
                   <span className="font-bold text-slate-800 text-base">Phrabaramee Repair</span>
                 </div>
                 <button onClick={() => setIsMobileMenuOpen(false)} className="p-1.5 text-slate-400 hover:text-slate-800">
@@ -560,7 +581,7 @@ export default function App() {
                 <button 
                   onClick={() => { setCurrentTab('dashboard'); setIsMobileMenuOpen(false); }}
                   className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-                    currentTab === 'dashboard' ? 'bg-sky-50 text-sky-700' : 'text-slate-600 hover:bg-slate-50'
+                    currentTab === 'dashboard' ? 'bg-teal-50 text-teal-700' : 'text-slate-600 hover:bg-slate-50'
                   }`}
                 >
                   <LayoutDashboard className="w-4 h-4" />
@@ -568,9 +589,9 @@ export default function App() {
                 </button>
 
                 <button 
-                  onClick={() => { setCurrentTab('assets'); setIsMobileMenuOpen(false); }}
+                  onClick={() => { setSearchTerm(''); setCurrentTab('assets'); setIsMobileMenuOpen(false); }}
                   className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-                    currentTab === 'assets' ? 'bg-sky-50 text-sky-700' : 'text-slate-600 hover:bg-slate-50'
+                    currentTab === 'assets' ? 'bg-teal-50 text-teal-700' : 'text-slate-600 hover:bg-slate-50'
                   }`}
                 >
                   <div className="flex items-center gap-2.5">
@@ -583,7 +604,7 @@ export default function App() {
                 <button 
                   onClick={() => { setCurrentTab('maintenance'); setIsMobileMenuOpen(false); }}
                   className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-                    currentTab === 'maintenance' ? 'bg-sky-50 text-sky-700' : 'text-slate-600 hover:bg-slate-50'
+                    currentTab === 'maintenance' ? 'bg-teal-50 text-teal-700' : 'text-slate-600 hover:bg-slate-50'
                   }`}
                 >
                   <div className="flex items-center gap-2.5">
@@ -596,7 +617,7 @@ export default function App() {
                 <button 
                   onClick={() => { setCurrentTab('disposal'); setIsMobileMenuOpen(false); }}
                   className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-                    currentTab === 'disposal' ? 'bg-sky-50 text-sky-700' : 'text-slate-600 hover:bg-slate-50'
+                    currentTab === 'disposal' ? 'bg-teal-50 text-teal-700' : 'text-slate-600 hover:bg-slate-50'
                   }`}
                 >
                   <div className="flex items-center gap-2.5">
@@ -610,7 +631,7 @@ export default function App() {
 
             <div className="border-t border-slate-100 pt-4 space-y-3">
               <div className="flex items-center gap-2.5 px-2">
-                <div className="w-8 h-8 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center font-bold">AD</div>
+                <div className="w-8 h-8 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center font-bold">AD</div>
                 <div>
                   <p className="text-xs font-bold text-slate-800">Administrator</p>
                   <p className="text-[10px] text-slate-400">IT TAK</p>
@@ -629,11 +650,11 @@ export default function App() {
       <div className="flex-1 flex flex-col overflow-hidden">
         
         {/* TOP BAR / HEADER */}
-        <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between shadow-xs">
+        <header className="sticky top-0 z-30 bg-white border-b border-slate-100 px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button 
               onClick={() => setIsMobileMenuOpen(true)}
-              className="lg:hidden p-2 text-slate-500 hover:text-slate-800 bg-slate-50 rounded-xl border border-slate-200"
+              className="lg:hidden p-2 text-slate-500 hover:text-slate-800 bg-slate-50 rounded-xl border border-slate-100"
             >
               <Menu className="w-5 h-5" />
             </button>
@@ -646,7 +667,7 @@ export default function App() {
                 {currentTab === 'disposal' && 'บันทึกรายการรอแทงจำหน่ายและประวัติเสียหาย'}
               </h2>
               <p className="text-xs text-slate-400 hidden sm:block">
-                {currentTab === 'dashboard' && 'ข้อมูลเชิงลึกและประสิทธิภาพการใช้งานครุภัณฑ์โดยรวมของโรงพยาบาล'}
+                {currentTab === 'dashboard' && 'ระบบสืบค้นข้อมูล วิเคราะห์ครุภัณฑ์ อุปกรณ์คอมพิวเตอร์ และอะไหล่คงคลัง'}
                 {currentTab === 'assets' && 'จัดการประวัติ บันทึกสเปคเครื่อง วันที่ซื้อ เพื่อความสะดวกในการตรวจสอบ'}
                 {currentTab === 'maintenance' && 'ติดตามและรายงานขั้นตอนการส่งซ่อม บำรุงรักษาเชิงป้องกัน'}
                 {currentTab === 'disposal' && 'ตรวจสอบครุภัณฑ์ที่เตรียมดำเนินการจำหน่าย และประวัติการจัดเก็บตามรอบปี'}
@@ -658,7 +679,7 @@ export default function App() {
             {currentTab === 'assets' && (
               <button 
                 onClick={() => openModal()}
-                className="flex items-center gap-2 px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-xl transition-all shadow-sm font-bold text-xs"
+                className="flex items-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white rounded-xl transition-all shadow-sm font-bold text-xs"
               >
                 <Plus className="w-3.5 h-3.5" /> เพิ่มครุภัณฑ์ใหม่
               </button>
@@ -667,10 +688,10 @@ export default function App() {
             <button 
               onClick={fetchData} 
               disabled={loading}
-              className="p-2 text-slate-500 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-xl border border-slate-200 transition-all"
+              className="p-2 text-slate-500 hover:text-teal-600 bg-slate-50 hover:bg-teal-50 rounded-xl border border-slate-100 transition-all"
               title="ดึงข้อมูลล่าสุด"
             >
-              <Activity className={`w-4 h-4 ${loading ? 'animate-spin text-sky-600' : ''}`} />
+              <Activity className={`w-4 h-4 ${loading ? 'animate-spin text-teal-600' : ''}`} />
             </button>
           </div>
         </header>
@@ -678,187 +699,196 @@ export default function App() {
         {/* --- PAGES CONTAINER --- */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6">
           
-          {/* TAB 1: DASHBOARD VIEW */}
+          {/* TAB 1: DASHBOARD VIEW (อิงโครงร่างแผงภาพ image_bd6999.jpg แต่อัปเกรดเป็นมิ้นต์ขาว) */}
           {currentTab === 'dashboard' && (
-            <div className="space-y-6">
+            <div className="space-y-6 animate-fadeIn">
               
-              {/* Stats Cards */}
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 relative overflow-hidden group hover:border-slate-300 shadow-sm transition-all">
-                  <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                    <ClipboardList className="w-24 h-24 text-slate-400" />
+              {/* แถบต้อนรับขนาดใหญ่ (Hero Header Area) */}
+              <div className="text-center py-8 bg-white border border-teal-100/80 rounded-3xl relative overflow-hidden shadow-sm">
+                <div className="absolute inset-0 bg-gradient-to-r from-teal-500/5 to-emerald-500/5 pointer-events-none"></div>
+                <h1 className="text-3xl md:text-4xl font-black text-slate-900 tracking-wide">Repair System</h1>
+                <p className="text-sm text-teal-600 font-bold mt-1">ระบบลงทะเบียน แจ้งซ่อมบำรุง & ควบคุมครุภัณฑ์คอมพิวเตอร์ โรงพยาบาลพระบารมี</p>
+              </div>
+
+              {/* สถิติ 3 ช่องแบบดั้งเดิมตามภาพ image_bd6999.jpg */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                
+                {/* 1. จำนวนครุภัณฑ์ */}
+                <div className="bg-white p-6 rounded-2xl border border-slate-150 shadow-sm relative overflow-hidden hover:border-teal-300 transition-all flex flex-col justify-between">
+                  <div className="flex justify-between items-center mb-3">
+                    <span className="text-sm font-extrabold text-slate-500 uppercase tracking-wider">จำนวนครุภัณฑ์</span>
+                    <div className="p-2 bg-teal-50 rounded-xl text-teal-600 border border-teal-100">
+                      <Laptop className="w-5 h-5" />
+                    </div>
                   </div>
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">อุปกรณ์ทั้งหมด</p>
-                  <h3 className="text-3xl font-extrabold text-slate-800 mt-2">{stats.total}</h3>
-                  <span className="text-[10px] text-slate-400 block mt-1.5">ระบบซิงก์ Cloud</span>
+                  <div>
+                    <h3 className="text-4xl font-black text-slate-800">{stats.total}</h3>
+                    <p className="text-xs text-slate-400 mt-1">รายการอุปกรณ์คอมพิวเตอร์และวัสดุทั้งหมด</p>
+                  </div>
                 </div>
 
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 relative overflow-hidden group hover:border-slate-300 shadow-sm transition-all">
-                  <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                    <CheckCircle2 className="w-24 h-24 text-emerald-400" />
+                {/* 2. งานซ่อมที่ยังเปิด */}
+                <div className="bg-white p-6 rounded-2xl border border-slate-150 shadow-sm relative overflow-hidden hover:border-teal-300 transition-all flex flex-col justify-between">
+                  <div className="flex justify-between items-center mb-3">
+                    <span className="text-sm font-extrabold text-amber-600 uppercase tracking-wider">งานซ่อมที่ยังเปิด</span>
+                    <div className="p-2 bg-amber-50 rounded-xl text-amber-600 border border-amber-100">
+                      <Wrench className="w-5 h-5 animate-pulse" />
+                    </div>
                   </div>
-                  <p className="text-xs font-bold text-emerald-600 uppercase tracking-wider">ปกติ/สำรอง</p>
-                  <h3 className="text-3xl font-extrabold text-emerald-600 mt-2">{stats.active}</h3>
-                  <span className="text-[10px] text-slate-400 block mt-1.5">พร้อมใช้งานในระบบ</span>
+                  <div>
+                    <h3 className="text-4xl font-black text-amber-600">{stats.repair}</h3>
+                    <p className="text-xs text-slate-400 mt-1">อยู่ระหว่างส่งซ่อมแซมจากทุกแผนก</p>
+                  </div>
                 </div>
 
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 relative overflow-hidden group hover:border-slate-300 shadow-sm transition-all">
-                  <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                    <Wrench className="w-24 h-24 text-amber-400" />
+                {/* 3. จำนวนวัสดุคงคลังสะสม */}
+                <div className="bg-white p-6 rounded-2xl border border-slate-150 shadow-sm relative overflow-hidden hover:border-teal-300 transition-all flex flex-col justify-between">
+                  <div className="flex justify-between items-center mb-3">
+                    <span className="text-sm font-extrabold text-teal-600 uppercase tracking-wider">จำนวนวัสดุคงคลัง</span>
+                    <div className="p-2 bg-teal-50 rounded-xl text-teal-600 border border-teal-100">
+                      <Database className="w-5 h-5" />
+                    </div>
                   </div>
-                  <p className="text-xs font-bold text-amber-600 uppercase tracking-wider">กำลังส่งซ่อม</p>
-                  <h3 className="text-3xl font-extrabold text-amber-500 mt-2">{stats.repair}</h3>
-                  <span className="text-[10px] text-slate-400 block mt-1.5">อยู่ระหว่างดำเนินการ</span>
+                  <div>
+                    <h3 className="text-4xl font-black text-teal-600">{totalStockCount}</h3>
+                    <p className="text-xs text-slate-400 mt-1">อะไหล่สำรองคงเหลือสำหรับการเบิกใช้งาน</p>
+                  </div>
                 </div>
 
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 relative overflow-hidden group hover:border-slate-300 shadow-sm transition-all">
-                  <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                    <Clock className="w-24 h-24 text-orange-400" />
-                  </div>
-                  <p className="text-xs font-bold text-orange-600 uppercase tracking-wider">รอจำหน่าย</p>
-                  <h3 className="text-3xl font-extrabold text-orange-500 mt-2">{stats.pendingDisposal}</h3>
-                  <span className="text-[10px] text-slate-400 block mt-1.5">เตรียมดำเนินเรื่อง</span>
+              </div>
+
+              {/* กล่องวิเคราะห์ยอดสะสมคลังและการนำไปใช้งาน */}
+              <div className="bg-white p-6 rounded-2xl border border-slate-150 shadow-sm space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <h3 className="text-md font-bold text-slate-800 flex items-center gap-2">
+                    <BarChart3 className="w-5 h-5 text-teal-600" /> วิเคราะห์มูลค่าและคำนวณการใช้สอย
+                  </h3>
+                  <span className="text-xs text-slate-400 font-semibold">อัปเดตแบบเรียลไทม์จากระบบคลาวด์</span>
                 </div>
 
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 relative overflow-hidden group hover:border-slate-300 shadow-sm transition-all">
-                  <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                    <Trash className="w-24 h-24 text-slate-400" />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
+                  
+                  {/* ความคืบหน้า: นำไปใช้งานจริง */}
+                  <div className="space-y-2 p-4 bg-teal-50/20 rounded-xl border border-teal-50">
+                    <div className="flex justify-between text-xs font-semibold text-slate-500">
+                      <span className="flex items-center gap-1"><CheckCircle2 className="w-4 h-4 text-emerald-500" /> การนำไปใช้งานจริง</span>
+                      <span className="text-teal-700 font-bold">{totalUsageCount} ชิ้น ({usagePercentage}%)</span>
+                    </div>
+                    <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden">
+                      <div className="bg-teal-500 h-full rounded-full transition-all duration-500" style={{ width: `${usagePercentage}%` }}></div>
+                    </div>
+                    <p className="text-[11px] text-slate-400">คอมพิวเตอร์ที่ใช้งานให้บริการผู้ป่วยหรือสำนักงาน</p>
                   </div>
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">แทงจำหน่าย</p>
-                  <h3 className="text-3xl font-extrabold text-slate-600 mt-2">{stats.disposed}</h3>
-                  <span className="text-[10px] text-slate-400 block mt-1.5">ยกเลิกการครอบครอง</span>
+
+                  {/* ความคืบหน้า: ยอดคงคลัง/สำรอง */}
+                  <div className="space-y-2 p-4 bg-teal-50/20 rounded-xl border border-teal-50">
+                    <div className="flex justify-between text-xs font-semibold text-slate-500">
+                      <span className="flex items-center gap-1"><Package className="w-4 h-4 text-teal-600" /> ยอดคงคลัง / อะไหล่สำรอง</span>
+                      <span className="text-teal-700 font-bold">{totalStockCount} ชิ้น ({stockPercentage}%)</span>
+                    </div>
+                    <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden">
+                      <div className="bg-emerald-500 h-full rounded-full transition-all duration-500" style={{ width: `${stockPercentage}%` }}></div>
+                    </div>
+                    <p className="text-[11px] text-slate-400">วัสดุ อะไหล่ และอุปกรณ์สำรองพร้อมสลับใช้งานทันที</p>
+                  </div>
+
+                  {/* ความคืบหน้า: ยอดเสียหายจำหน่ายออก */}
+                  <div className="space-y-2 p-4 bg-teal-50/20 rounded-xl border border-teal-50">
+                    <div className="flex justify-between text-xs font-semibold text-slate-500">
+                      <span className="flex items-center gap-1"><Trash className="w-4 h-4 text-rose-500" /> ยอดเสียหาย / จำหน่ายออก</span>
+                      <span className="text-rose-700 font-bold">{totalDisposedCount} ชิ้น ({disposalPercentage}%)</span>
+                    </div>
+                    <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden">
+                      <div className="bg-rose-500 h-full rounded-full transition-all duration-500" style={{ width: `${disposalPercentage}%` }}></div>
+                    </div>
+                    <p className="text-[11px] text-slate-400">ประวัติครุภัณฑ์เสื่อมสภาพที่ดำเนินการจำหน่ายประจำปี</p>
+                  </div>
+
                 </div>
               </div>
 
-              {/* Charts & Quick Summary */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* หมวดหมู่ไอคอนด่วน 6 ช่อง สไตล์กล่อง image_bd6999.jpg (สามารถกดได้จริงเพื่อดูและค้นหา) */}
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <h4 className="text-xs font-extrabold text-slate-500 tracking-wider uppercase">สืบค้นด่วนจากประเภทครุภัณฑ์ (สามารถคลิกเพื่อกรองค้นหาได้)</h4>
+                  <span className="text-xs text-slate-400 font-bold">รวม 6 หมวดหมู่ใช้งานหลัก</span>
+                </div>
                 
-                {/* Category Breakdown */}
-                <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-                  <div className="flex justify-between items-center pb-2 border-b border-slate-100">
-                    <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                      <LayoutDashboard className="w-4 h-4 text-sky-600" /> สัดส่วนแยกตามหมวดหมู่
-                    </h4>
-                    <span className="text-xs text-slate-400">รวม 7 กลุ่มหลัก</span>
-                  </div>
-
-                  <div className="space-y-4 pt-2">
-                    {/* PC */}
-                    <div>
-                      <div className="flex justify-between text-xs font-semibold text-slate-500 mb-1">
-                        <span className="flex items-center gap-1.5"><Laptop className="w-3.5 h-3.5 text-sky-600" /> คอมพิวเตอร์ / โน้ตบุ๊ก</span>
-                        <span className="text-slate-800 font-bold">{categorySummary.computer} เครื่อง</span>
-                      </div>
-                      <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                        <div 
-                          className="bg-sky-500 h-full rounded-full transition-all duration-500" 
-                          style={{ width: `${stats.total > 0 ? (categorySummary.computer / stats.total) * 100 : 0}%` }}
-                        ></div>
-                      </div>
-                    </div>
-
-                    {/* Monitors */}
-                    <div>
-                      <div className="flex justify-between text-xs font-semibold text-slate-500 mb-1">
-                        <span className="flex items-center gap-1.5"><Monitor className="w-3.5 h-3.5 text-sky-500" /> จอมอนิเตอร์</span>
-                        <span className="text-slate-800 font-bold">{categorySummary.monitor} เครื่อง</span>
-                      </div>
-                      <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                        <div 
-                          className="bg-sky-400 h-full rounded-full transition-all duration-500" 
-                          style={{ width: `${stats.total > 0 ? (categorySummary.monitor / stats.total) * 100 : 0}%` }}
-                        ></div>
-                      </div>
-                    </div>
-
-                    {/* Printers */}
-                    <div>
-                      <div className="flex justify-between text-xs font-semibold text-slate-500 mb-1">
-                        <span className="flex items-center gap-1.5"><Printer className="w-3.5 h-3.5 text-slate-500" /> เครื่องพิมพ์</span>
-                        <span className="text-slate-800 font-bold">{categorySummary.printer} เครื่อง</span>
-                      </div>
-                      <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                        <div 
-                          className="bg-slate-400 h-full rounded-full transition-all duration-500" 
-                          style={{ width: `${stats.total > 0 ? (categorySummary.printer / stats.total) * 100 : 0}%` }}
-                        ></div>
-                      </div>
-                    </div>
-
-                    {/* Servers */}
-                    <div>
-                      <div className="flex justify-between text-xs font-semibold text-slate-500 mb-1">
-                        <span className="flex items-center gap-1.5"><Server className="w-3.5 h-3.5 text-indigo-600" /> เซิร์ฟเวอร์</span>
-                        <span className="text-slate-800 font-bold">{categorySummary.server} ระบบ</span>
-                      </div>
-                      <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                        <div 
-                          className="bg-indigo-500 h-full rounded-full transition-all duration-500" 
-                          style={{ width: `${stats.total > 0 ? (categorySummary.server / stats.total) * 100 : 0}%` }}
-                        ></div>
-                      </div>
-                    </div>
-
-                    {/* Network Devices */}
-                    <div>
-                      <div className="flex justify-between text-xs font-semibold text-slate-500 mb-1">
-                        <span className="flex items-center gap-1.5"><Cpu className="w-3.5 h-3.5 text-slate-550" /> อุปกรณ์เครือข่าย</span>
-                        <span className="text-slate-800 font-bold">{categorySummary.network} อุปกรณ์</span>
-                      </div>
-                      <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                        <div 
-                          className="bg-sky-600 h-full rounded-full transition-all duration-500" 
-                          style={{ width: `${stats.total > 0 ? (categorySummary.network / stats.total) * 100 : 0}%` }}
-                        ></div>
-                      </div>
-                    </div>
-
-                    {/* Materials */}
-                    <div>
-                      <div className="flex justify-between text-xs font-semibold text-slate-500 mb-1">
-                        <span className="flex items-center gap-1.5"><Package className="w-3.5 h-3.5 text-slate-400" /> วัสดุ / อะไหล่ / อุปกรณ์สำนักงาน</span>
-                        <span className="text-slate-800 font-bold">{categorySummary.material} รายการ</span>
-                      </div>
-                      <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                        <div 
-                          className="bg-slate-500 h-full rounded-full transition-all duration-500" 
-                          style={{ width: `${stats.total > 0 ? (categorySummary.material / stats.total) * 100 : 0}%` }}
-                        ></div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Recent Items Sidebar in Dashboard */}
-                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-                  <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2 pb-2 border-b border-slate-100">
-                    <Clock className="w-4 h-4 text-sky-500" /> รายการบันทึกล่าสุด
-                  </h4>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
                   
-                  {equipment.length === 0 ? (
-                    <p className="text-xs text-slate-400 py-6 text-center">ไม่มีข้อมูลครุภัณฑ์ขณะนี้</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {equipment.slice(0, 4).map((item, index) => (
-                        <div key={item.id || index} className="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-100">
-                          <div className="flex items-center gap-2.5">
-                            <div className="p-1.5 bg-white rounded-lg border border-slate-200">
-                              {getCategoryIcon(item.category)}
-                            </div>
-                            <div className="truncate max-w-[120px]">
-                              <p className="text-xs font-bold text-slate-800 truncate">{item.name}</p>
-                              <p className="text-[9px] text-slate-400 truncate">{item.specs || item.serial || 'ไม่มีรายละเอียด'}</p>
-                            </div>
-                          </div>
-                          <div>
-                            {getStatusBadge(item.status)}
-                          </div>
-                        </div>
-                      ))}
+                  {/* 1. เครื่องพิมพ์ */}
+                  <button 
+                    onClick={() => handleCategoryClick('เครื่องพิมพ์')}
+                    className="p-6 bg-white border border-slate-150 rounded-2xl hover:border-teal-500 hover:shadow-md hover:bg-teal-50/10 transition-all flex flex-col items-center justify-center text-center group"
+                  >
+                    <div className="p-3 bg-teal-50 text-teal-600 rounded-2xl group-hover:bg-teal-600 group-hover:text-white transition-all mb-3 border border-teal-100">
+                      <Printer className="w-6 h-6" />
                     </div>
-                  )}
-                </div>
+                    <span className="text-sm font-bold text-slate-800">เครื่องพิมพ์</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-bold mt-1.5">{categorySummary.printer} เครื่อง</span>
+                  </button>
 
+                  {/* 2. จอภาพ */}
+                  <button 
+                    onClick={() => handleCategoryClick('จอมอนิเตอร์')}
+                    className="p-6 bg-white border border-slate-150 rounded-2xl hover:border-teal-500 hover:shadow-md hover:bg-teal-50/10 transition-all flex flex-col items-center justify-center text-center group"
+                  >
+                    <div className="p-3 bg-teal-50 text-teal-600 rounded-2xl group-hover:bg-teal-600 group-hover:text-white transition-all mb-3 border border-teal-100">
+                      <Monitor className="w-6 h-6" />
+                    </div>
+                    <span className="text-sm font-bold text-slate-800">จอภาพ / มอนิเตอร์</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-bold mt-1.5">{categorySummary.monitor} เครื่อง</span>
+                  </button>
+
+                  {/* 3. คีย์บอร์ด / อุปกรณ์เสริม */}
+                  <button 
+                    onClick={() => handleCategoryClick('อุปกรณ์เครือข่าย')}
+                    className="p-6 bg-white border border-slate-150 rounded-2xl hover:border-teal-500 hover:shadow-md hover:bg-teal-50/10 transition-all flex flex-col items-center justify-center text-center group"
+                  >
+                    <div className="p-3 bg-teal-50 text-teal-600 rounded-2xl group-hover:bg-teal-600 group-hover:text-white transition-all mb-3 border border-teal-100">
+                      <Cpu className="w-6 h-6" />
+                    </div>
+                    <span className="text-sm font-bold text-slate-800">อุปกรณ์เครือข่าย/เสริม</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-bold mt-1.5">{categorySummary.network} อุปกรณ์</span>
+                  </button>
+
+                  {/* 4. วัสดุอะไหล่ */}
+                  <button 
+                    onClick={() => handleCategoryClick('วัสดุ/อะไหล่/สำนักงาน')}
+                    className="p-6 bg-white border border-slate-150 rounded-2xl hover:border-teal-500 hover:shadow-md hover:bg-teal-50/10 transition-all flex flex-col items-center justify-center text-center group"
+                  >
+                    <div className="p-3 bg-slate-50 text-slate-600 rounded-2xl group-hover:bg-teal-600 group-hover:text-white transition-all mb-3 border border-slate-200">
+                      <Package className="w-6 h-6" />
+                    </div>
+                    <span className="text-sm font-bold text-slate-800">วัสดุ / อะไหล่สำนักงาน</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-bold mt-1.5">{categorySummary.material} รายการ</span>
+                  </button>
+
+                  {/* 5. คอมพิวเตอร์ */}
+                  <button 
+                    onClick={() => handleCategoryClick('คอมพิวเตอร์')}
+                    className="p-6 bg-white border border-slate-150 rounded-2xl hover:border-teal-500 hover:shadow-md hover:bg-teal-50/10 transition-all flex flex-col items-center justify-center text-center group"
+                  >
+                    <div className="p-3 bg-teal-50 text-teal-600 rounded-2xl group-hover:bg-teal-600 group-hover:text-white transition-all mb-3 border border-teal-100">
+                      <Laptop className="w-6 h-6" />
+                    </div>
+                    <span className="text-sm font-bold text-slate-800">คอมพิวเตอร์ / โน้ตบุ๊ก</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-bold mt-1.5">{categorySummary.computer} เครื่อง</span>
+                  </button>
+
+                  {/* 6. เซิร์ฟเวอร์ */}
+                  <button 
+                    onClick={() => handleCategoryClick('เซิร์ฟเวอร์')}
+                    className="p-6 bg-white border border-slate-150 rounded-2xl hover:border-teal-500 hover:shadow-md hover:bg-teal-50/10 transition-all flex flex-col items-center justify-center text-center group"
+                  >
+                    <div className="p-3 bg-teal-50 text-teal-600 rounded-2xl group-hover:bg-teal-600 group-hover:text-white transition-all mb-3 border border-teal-100">
+                      <Server className="w-6 h-6" />
+                    </div>
+                    <span className="text-sm font-bold text-slate-800">ระบบเซิร์ฟเวอร์</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-bold mt-1.5">{categorySummary.server} ระบบ</span>
+                  </button>
+
+                </div>
               </div>
 
             </div>
@@ -877,15 +907,23 @@ export default function App() {
                     placeholder="ค้นหาตามชื่อ, S/N, สเปค, วันที่ซื้อ, ผู้ถือครอง..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all text-sm placeholder-slate-400 text-slate-900 shadow-sm"
+                    className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all text-sm placeholder-slate-400 text-slate-900 shadow-sm"
                   />
                 </div>
                 
                 <div className="flex gap-4 w-full md:w-auto items-center justify-end">
-                  <div className="flex items-center gap-2 px-4 py-2 bg-white rounded-xl border border-slate-200 shadow-sm">
-                     <Activity className="w-4 h-4 text-sky-600" />
-                     <span className="text-sm font-semibold text-slate-600">พบการค้นหา <span className="text-sky-600 font-bold ml-1">{filteredEquipment.length}</span> รายการ</span>
+                  <div className="flex items-center gap-2 px-4 py-2 bg-white rounded-xl border border-slate-150 shadow-sm">
+                     <Activity className="w-4 h-4 text-teal-600" />
+                     <span className="text-sm font-semibold text-slate-600">พบการค้นหา <span className="text-teal-600 font-bold ml-1">{filteredEquipment.length}</span> รายการ</span>
                   </div>
+                  {searchTerm && (
+                    <button 
+                      onClick={() => setSearchTerm('')}
+                      className="text-xs text-rose-500 hover:text-rose-700 font-bold underline"
+                    >
+                      ล้างการกรองข้อมูล
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -929,7 +967,7 @@ export default function App() {
                                 <div className="flex flex-col">
                                   <span className="font-bold text-slate-800">{item.name}</span>
                                   {item.specs && (
-                                    <span className="text-[11px] text-sky-600/80 font-bold mt-0.5 flex items-center gap-1">
+                                    <span className="text-[11px] text-teal-600/80 font-bold mt-0.5 flex items-center gap-1">
                                       <Sliders className="w-3 h-3 shrink-0" /> {item.specs}
                                     </span>
                                   )}
@@ -952,7 +990,7 @@ export default function App() {
                             </td>
                             <td className="px-6 py-4">
                               <div className="flex items-center gap-2">
-                                <div className="w-6 h-6 rounded-full bg-sky-50 text-sky-600 flex items-center justify-center text-[10px] font-bold border border-sky-100">
+                                <div className="w-6 h-6 rounded-full bg-teal-50 text-teal-600 flex items-center justify-center text-[10px] font-bold border border-teal-100">
                                   {item.owner ? item.owner.trim().charAt(0) : '?'}
                                 </div>
                                 <span className="text-slate-600 font-semibold">{item.owner || 'ไม่มีผู้ครอบครอง'}</span>
@@ -965,7 +1003,7 @@ export default function App() {
                               <div className="flex items-center justify-end gap-1 md:opacity-0 group-hover:opacity-100 transition-all">
                                 <button 
                                   onClick={() => openModal(item)} 
-                                  className="p-1.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-lg transition-all"
+                                  className="p-1.5 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-all"
                                   title="แก้ไข"
                                 >
                                   <Edit3 className="w-4.5 h-4.5" />
@@ -1057,13 +1095,13 @@ export default function App() {
                               <div className="flex items-center justify-end gap-2">
                                 <button 
                                   onClick={() => quickUpdateStatus(item, 'ใช้งานปกติ')}
-                                  className="px-3 py-1.5 text-xs font-bold text-emerald-750 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl border border-emerald-200 transition-all flex items-center gap-1.5"
+                                  className="px-3 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-xl border border-emerald-200 transition-all flex items-center gap-1.5"
                                 >
                                   <CheckCircle2 className="w-3.5 h-3.5" /> ซ่อมเสร็จ (ปรับสถานะปกติ)
                                 </button>
                                 <button 
                                   onClick={() => quickUpdateStatus(item, 'รอจำหน่าย')}
-                                  className="px-3 py-1.5 text-xs font-bold text-orange-750 bg-orange-50 hover:bg-orange-100 text-orange-700 rounded-xl border border-orange-200 transition-all flex items-center gap-1.5"
+                                  className="px-3 py-1.5 text-xs font-bold text-orange-700 bg-orange-50 hover:bg-orange-100 rounded-xl border border-orange-200 transition-all flex items-center gap-1.5"
                                 >
                                   <Clock className="w-3.5 h-3.5" /> ปรับเป็น "รอจำหน่าย"
                                 </button>
@@ -1170,7 +1208,7 @@ export default function App() {
                                 )}
                                 <button 
                                   onClick={() => quickUpdateStatus(item, 'ใช้งานปกติ')}
-                                  className="px-3 py-1.5 text-xs font-bold text-sky-700 bg-sky-50 hover:bg-sky-100 rounded-xl border border-sky-200 hover:border-transparent transition-all flex items-center gap-1"
+                                  className="px-3 py-1.5 text-xs font-bold text-teal-700 bg-teal-50 hover:bg-teal-100 rounded-xl border border-teal-200 hover:border-transparent transition-all flex items-center gap-1"
                                   title="กู้คืนสถานะเป็นปกติ"
                                 >
                                   กู้คืนกลับใช้งานปกติ
@@ -1206,7 +1244,7 @@ export default function App() {
             
             <div className="px-6 py-4 border-b border-slate-150 flex justify-between items-center bg-slate-50">
               <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Cpu className="w-5 h-5 text-sky-600" />
+                <Cpu className="w-5 h-5 text-teal-600" />
                 {editingItem ? 'แก้ไขรายละเอียดครุภัณฑ์' : 'ลงทะเบียนครุภัณฑ์ใหม่'}
               </h2>
               <button onClick={closeModal} className="text-slate-400 hover:text-slate-600 transition-colors">
@@ -1224,7 +1262,7 @@ export default function App() {
                   type="text" 
                   value={formData.name}
                   onChange={e => setFormData({...formData, name: e.target.value})}
-                  className="w-full px-3.5 py-2.5 bg-white border border-slate-250 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all text-sm placeholder-slate-400"
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all text-sm placeholder-slate-400"
                   placeholder="เช่น Dell Optiplex 7090, จอ Monitor LG 24"
                 />
               </div>
@@ -1236,7 +1274,7 @@ export default function App() {
                   type="text" 
                   value={formData.specs}
                   onChange={e => setFormData({...formData, specs: e.target.value})}
-                  className="w-full px-3.5 py-2.5 bg-white border border-slate-250 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all text-sm placeholder-slate-400"
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all text-sm placeholder-slate-400"
                   placeholder="เช่น Windows 11 Pro, CPU Core i5, RAM 16GB, SSD 512"
                 />
               </div>
@@ -1248,7 +1286,7 @@ export default function App() {
                   <select 
                     value={formData.category}
                     onChange={e => setFormData({...formData, category: e.target.value})}
-                    className="w-full px-3.5 py-2.5 bg-white border border-slate-250 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/20 text-sm"
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/20 text-sm"
                   >
                     <option value="คอมพิวเตอร์">คอมพิวเตอร์</option>
                     <option value="จอมอนิเตอร์">จอมอนิเตอร์</option>
@@ -1265,7 +1303,7 @@ export default function App() {
                     type="text" 
                     value={formData.serial}
                     onChange={e => setFormData({...formData, serial: e.target.value})}
-                    className="w-full px-3.5 py-2.5 bg-white border border-slate-250 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/20 text-sm font-mono placeholder-slate-400"
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/20 text-sm font-mono placeholder-slate-400"
                     placeholder="S/N: 7X8Y9Z..."
                   />
                 </div>
@@ -1279,7 +1317,7 @@ export default function App() {
                     type="text" 
                     value={formData.purchaseDate}
                     onChange={e => setFormData({...formData, purchaseDate: e.target.value})}
-                    className="w-full px-3.5 py-2.5 bg-white border border-slate-250 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/20 text-sm placeholder-slate-400 font-mono"
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/20 text-sm placeholder-slate-400 font-mono"
                     placeholder="เช่น 25/06/2569 หรือ ปี 2568"
                   />
                 </div>
@@ -1289,7 +1327,7 @@ export default function App() {
                     type="text" 
                     value={formData.owner}
                     onChange={e => setFormData({...formData, owner: e.target.value})}
-                    className="w-full px-3.5 py-2.5 bg-white border border-slate-250 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/20 text-sm placeholder-slate-400"
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/20 text-sm placeholder-slate-400"
                     placeholder="เช่น แผนกผู้ป่วยนอก, นายสมเกียรติ"
                   />
                 </div>
@@ -1319,7 +1357,7 @@ export default function App() {
                         disposalDate: updateDisposalDate
                       });
                     }}
-                    className="w-full px-3.5 py-2.5 bg-white border border-slate-250 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/20 text-sm"
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/20 text-sm"
                   >
                     <option value="ใช้งานปกติ">ใช้งานปกติ</option>
                     <option value="ส่งซ่อม">ส่งซ่อม</option>
@@ -1329,7 +1367,7 @@ export default function App() {
                   </select>
                 </div>
 
-                {/* วันเดือปีที่บันทึกจำหน่าย */}
+                {/* วันเดือนปีที่บันทึกจำหน่าย */}
                 {(formData.status === 'รอจำหน่าย' || formData.status === 'แทงจำหน่าย') && (
                   <div>
                     <label className="block text-xs font-semibold text-orange-600 mb-1.5">วันเดือนปีที่บันทึกจำหน่าย</label>
@@ -1354,7 +1392,7 @@ export default function App() {
                 <button 
                   type="submit" 
                   disabled={loading}
-                  className="px-5 py-2.5 text-sm font-bold bg-sky-600 hover:bg-sky-500 text-white rounded-xl shadow-md shadow-sky-600/10 transition-all disabled:opacity-50 flex items-center gap-2"
+                  className="px-5 py-2.5 text-sm font-bold bg-teal-600 hover:bg-teal-500 text-white rounded-xl shadow-md shadow-teal-600/10 transition-all disabled:opacity-50 flex items-center gap-2"
                 >
                   {loading ? 'กำลังดำเนินการบันทึก...' : 'บันทึกครุภัณฑ์'}
                 </button>
@@ -1366,7 +1404,7 @@ export default function App() {
 
       {/* Loading Indicator แบบ Global */}
       {loading && !isModalOpen && (
-        <div className="fixed bottom-6 right-6 bg-sky-600 text-white px-4 py-3 rounded-2xl shadow-xl text-sm flex items-center gap-2 z-50 transition-all">
+        <div className="fixed bottom-6 right-6 bg-teal-600 text-white px-4 py-3 rounded-2xl shadow-xl text-sm flex items-center gap-2 z-50 transition-all">
           <Activity className="w-4 h-4 animate-spin" />
           <span className="font-semibold">กำลังดำเนินการซิงก์ข้อมูล...</span>
         </div>
